@@ -23,7 +23,7 @@ from utils_huleo import get_random_patch_list, random_hide, image_histogram_equa
 class DataGenerator(tf.keras.utils.Sequence):
     
     ''' Initialization of the generator '''
-    def __init__(self, data_frame, y, x, target_channels, indexes_output=None, batch_size=128, path_to_img="./dataset/images", shuffle=True, vae_mode=False, data_augmentation=True, reconstruction=False, softmax=False, hide_and_seek=False, equalization=False, mode='mclass', outputs = [True, True, True, True], hist_matching = False,
+    def __init__(self, data_frame, y, x, target_channels, y_cols = None, indexes_output=None, batch_size=128, path_to_img="./dataset/images", shuffle=True, vae_mode=False, data_augmentation=True, reconstruction=False, softmax=False, hide_and_seek=False, equalization=False, mode='mclass', outputs = [True, True, True, True], hist_matching = False,
                  dict_classes=1):
 
         # Initialization
@@ -41,6 +41,8 @@ class DataGenerator(tf.keras.utils.Sequence):
                 "NV": np.array([0, 1, 0]),
                 "NB": np.array([0, 0, 1])
             }
+
+        self.y_cols = y_cols
             
         # Tsv data table
         self.df = data_frame
@@ -119,6 +121,10 @@ class DataGenerator(tf.keras.utils.Sequence):
             label = self.dict_classes[df_row["group"]][self.outputs]
         if self.mode == 'mLabel':
             label = np.array(list(df_row.values[-2:]), dtype=np.int)
+        
+        #Extract the specified columns as labels
+        if self.y_cols is not None:
+            label = np.array(df_row[self.y_cols].values, dtype=np.float32)
 
         # image_resampled = np.reshape(image,image.shape + (self.target_channels,))
         image_resampled = np.reshape(image,image.shape)

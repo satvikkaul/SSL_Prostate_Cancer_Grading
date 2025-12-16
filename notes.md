@@ -44,6 +44,8 @@
 
 ## 3. Fine-Tuning Optimization Strategy
 
+![alt text](./output/classification_result_wo_dataAug.png)
+
 To resolve initial issues with **Overfitting** (Validation Accuracy dropping) and **Loss Fluctuation**, the following critical changes were applied to `fine_tune.py`:
 
 ### **A. Freezing the Encoder (Transfer Learning)**
@@ -66,47 +68,44 @@ To resolve initial issues with **Overfitting** (Validation Accuracy dropping) an
 
 ## 4. Data Processing Decisions
 
-* **Class Handling:** Confirmed that **G4C** (Cribriform) is treated as a subset of **G4**. This aligns with the model's 4-class output structure (NC, G3, G4, G5).
+* **Class Handling:** Confirmed that **G4C** (Cribfriform) is treated as a subset of **G4**. This aligns with the model's 4-class output structure (NC, G3, G4, G5).
 * **Data Validation:** Established a strict rule that any data rows with missing labels (all zeros) are blocked at the `setup_data.py` stage.
 
-# Project Log: Stage 2 Optimization (Fine-Tuning)
+## 5. Investigation & Fixes: Custom Generator & Class Imbalance (New)
+
+### **A. Missing Data Augmentation**
+*   **Issue:** The default `ImageDataGenerator` in `fine_tune.py` applied **zero** augmentation, leading to rapid overfitting.
+*   **Fix:** Integrated `my_data_generator.py` (Custom `DataGenerator` class).
+    *   **Action:** Modified `my_data_generator.py` to accept raw CSV columns (`y_cols`) instead of hardcoded dictionaries.
+    *   **Result:** Enabled Rotation, Shift, Zoom, and Intensity scaling during training.
+
+### **B. Class Imbalance**
+*   **Issue:** The dataset is heavily imbalanced (mostly NC, few G5). The model was biased towards the majority class.
+*   **Fix:** Implemented Scikit-Learn `compute_class_weight`.
+    *   **Action:** Calculated weights inversely proportional to class frequency and passed `class_weight` to `model.fit()`.
+    *   **Result:** Misclassifying rare grades now penalizes the model significantly more.
+
+---
+
+# Project Log: Stage 2 Optimization (Fine-Tuning Outcomes)
 
 **Phase:** Downstream Task (Classification)
-**Status:** Moving from Linear Probing (Stage 1) to Fine-Tuning (Stage 2)
+**Method:** Two-Stage Fine-Tuning (Frozen Head $\to$ Unfrozen Encoder)
 
----
+![alt text](./output/classification_results_old.png)
 
-## 1. Context & Motivation
+### Results Analysis
+1.  **Stage 1 (Head Only, Frozen Encoder):**
+    *   **Accuracy:** Stagnated at **~24-25%**.
+    *   **Inference:** The pre-trained SSL weights alone (without fine-tuning) were **insufficient** to distinguish specific cancer grades. They provided a "general vision" base but no specific diagnostic ability.
 
-![acc/loss metric](image.png)
+2.  **Stage 2 (Unfrozen Encoder, Low LR):**
+    *   **Accuracy:** Immediately doubled to **~51%** upon unfreezing.
+    *   **Inference:** Validated that the frozen layers were indeed a bottleneck. Unfreezing allowed the model to adapt features for the specific task.
+    *   **Observations:**
+        *   **Overfitting:** Validation loss reached a minimum (~1.20) at Epoch 7 (Stage 2) and then began to rise, indicating the start of overfitting.
+        *   **Instability:** High volatility in validation accuracy (large jumps) suggests the Batch Size (16) may be too small relative to the high class weights for rare samples.
 
-After successfully running **Stage 1** (Frozen Encoder), the model achieved a validation accuracy of **~49%**. This confirms that the Self-Supervised Learning (SSL) pretext task successfully learned robust feature representations (better than the 25% random baseline).
-
-To improve performance further, we are initiating **Stage 2**. The goal is to transition the model from a "Generalist" (using generic tissue features) to a "Specialist" (understanding specific cancer grading nuances).
-
----
-
-## 2. Strategy: Partial Unfreezing (The "Specialist" Approach)
-
-Instead of unfreezing the entire network (which risks destroying pre-trained weights) or keeping it fully frozen (which hits a performance ceiling), I adopted a **Partial Unfreezing Strategy**.
-
-### A. Layer Analysis
-I inspected the encoder architecture (40 layers total) and identified two distinct sections:
-* **Early Layers (Indices 0–29):** Convolutional blocks responsible for low-level vision (edges, textures, nuclei shapes). These are universal and should remain **FROZEN**.
-* **Deep Layers (Indices 30–39):** The "Bottleneck" blocks (`bottle_conv2`, `bottle_conv3`). These handle high-level abstraction and decision-making. These will be **UNFROZEN** to adapt to the specific logic of Gleason Grading.
-
-### B. Implementation Logic
-I determined the cutoff point at **Index 30** (`bottle_conv2`).
-
-## 3. Hyperparameter Adjustments
-* When unfreezing layers, the model becomes highly sensitive to gradient updates. Large updates can "shock" the pre-trained weights, causing catastrophic forgetting.
-* Learning Rate (LR): Reduced from 0.0001 (Stage 1) to 0.00005 (Stage 2).
-* Reasoning: A tiny learning rate ensures gentle, precise updates that refine the weights rather than rewriting them.
-
-## 4. Model Preservation
-* To ensure we do not lose the successful baseline from Stage 1:
-* Backup: The Stage 1 model file was renamed to final_classifier_frozen.keras.
-* New Save: The Stage 2 training will write to final_classifier.keras only if it improves upon the metrics.
-
-## 5. Expected Outcome
-* By allowing the "Bottleneck" layers to update, we expect the model to learn to distinguish between difficult classes (e.g., Gleason 3 vs. Gleason 4) more effectively, potentially pushing validation accuracy into the 60%+ range.
+### Next Steps
+*   **Early Stopping:** Adopt the model from Stage 2, Epoch 7 (Best Val Loss).
+*   **Stability:** Increase Batch Size to 32 to smooth out gradients from high-weighted rare samples.

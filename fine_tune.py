@@ -2,19 +2,24 @@ import pandas as pd
 import numpy as np
 import os
 import tensorflow as tf
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from my_data_generator import DataGenerator
 from tensorflow.keras.layers import Dense, Dropout, Flatten, Input
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import SGD, Adam
 from variational_autoencoder import ConvVarAutoencoder
+from sklearn.utils import class_weight
+import matplotlib.pyplot as plt
+from tensorflow.keras.callbacks import ModelCheckpoint
 
 # --- CONFIGURATION ---
-BATCH_SIZE = 16 
-EPOCHS = 20     # Train longer for classification
-LR = 0.00005      # Lower learning rate for fine-tuning
+BATCH_SIZE = 32 
+EPOCHS_STAGE_1 = 10     # Warm-up epochs
+EPOCHS_STAGE_2 = 20     # Fine-tuning epochs
+LR_STAGE_1 = 1e-3       # Higher LR for new head
+LR_STAGE_2 = 1e-5       # Very low LR for fine-tuning
 IMG_DIM = (512, 512, 3)
 
-# Paths (Match your structure)
+# Paths
 TRAIN_CSV = "./dataset/Train.csv"
 TEST_CSV = "./dataset/Test.csv"
 IMG_DIR = "./dataset/images/"
@@ -24,46 +29,38 @@ WEIGHTS_PATH = './output/models/exp_0007/weights/VAE.weights.h5'
 print("Loading Data...")
 df_train = pd.read_csv(TRAIN_CSV)
 df_test = pd.read_csv(TEST_CSV)
-
-# Ensure filenames match what flow_from_dataframe expects
-# (Sometimes filenames in CSV need full paths or extensions)
 df_train['image_name'] = df_train['image_name'].astype(str)
 df_test['image_name'] = df_test['image_name'].astype(str)
-
-# Define the columns that represent our classes
 class_columns = ['NC', 'G3', 'G4', 'G5']
-
-# Create Data Generators (Standard Keras)
-train_datagen = ImageDataGenerator(rescale=1./255)
-test_datagen = ImageDataGenerator(rescale=1./255)
-
 print(f"Found {len(df_train)} training images.")
-train_generator = train_datagen.flow_from_dataframe(
-    dataframe=df_train,
-    directory=IMG_DIR,
-    x_col="image_name",
-    y_col=class_columns,
-    target_size=(IMG_DIM[0], IMG_DIM[1]),
+
+# Custom Generators
+train_generator = DataGenerator(
+    data_frame=df_train,
+    y=IMG_DIM[0], x=IMG_DIM[1], target_channels=IMG_DIM[2],
+    y_cols=class_columns,
     batch_size=BATCH_SIZE,
-    class_mode="raw", # Use 'raw' because we have multiple columns for one-hot
-    shuffle=True
+    path_to_img=IMG_DIR,
+    shuffle=True,
+    data_augmentation=True,  # Augmentation ON
+    mode='custom'
 )
 
-test_generator = test_datagen.flow_from_dataframe(
-    dataframe=df_test,
-    directory=IMG_DIR,
-    x_col="image_name",
-    y_col=class_columns,
-    target_size=(IMG_DIM[0], IMG_DIM[1]),
+test_generator = DataGenerator(
+    data_frame=df_test,
+    y=IMG_DIM[0], x=IMG_DIM[1], target_channels=IMG_DIM[2],
+    y_cols=class_columns,
     batch_size=BATCH_SIZE,
-    class_mode="raw",
-    shuffle=False
+    path_to_img=IMG_DIR,
+    shuffle=False,
+    data_augmentation=False, # Augmentation OFF
+    mode='custom'
 )
 
 # --- 2. BUILD MODEL & LOAD WEIGHTS ---
 print("Building Model and Loading SSL Weights...")
 
-# Initialize the architecture (Must match Main.py exactly)
+# Architecture configuration (Must match Main.py)
 encoder_conv_filters = [16, 32, 64, 128, 256]
 encoder_conv_kernel_size = [3, 3, 3, 3, 3]
 encoder_conv_strides = [2, 2, 2, 2, 2]
@@ -82,86 +79,97 @@ my_VAE = ConvVarAutoencoder(
     decoder_conv_t_filters, decoder_conv_t_kernel_size, decoder_conv_t_strides, z_dim
 )
 
-# Build and Load
 my_VAE.build(use_batch_norm=True, use_dropout=True)
 try:
     my_VAE.model.load_weights(WEIGHTS_PATH)
     print("SUCCESS: SSL Weights loaded.")
 except OSError:
     print(f"ERROR: Could not find weights at {WEIGHTS_PATH}")
-    print("Please update the WEIGHTS_PATH variable in the script.")
     exit()
 
-# --- 3. CREATE CLASSIFIER (FINE-TUNING) ---
-# Extract just the encoder part (input -> latent space)
+# --- 3. CLASS WEIGHTS ---
+print("Calculating class weights...")
+train_labels = np.argmax(df_train[class_columns].values, axis=1)
+unique_classes = np.unique(train_labels)
+class_weights_array = class_weight.compute_class_weight(
+    class_weight='balanced',
+    classes=unique_classes,
+    y=train_labels
+)
+
+class_weights_dict = {i: w for i, w in zip(unique_classes, class_weights_array)}
+print(f"Class Weights: {class_weights_dict}")
+# --- 4. CREATE CLASSIFIER ---
 encoder = my_VAE.encoder
-
-# === DEBUG: LIST ALL LAYERS ===
-print("Index | Layer Name")
-print("-" * 30)
-for i, layer in enumerate(encoder.layers):
-    print(f"{i:4d}  | {layer.name}")
-print("-" * 30)
-# ==============================
-print(f"Total layers in encoder: {len(encoder.layers)}")
-
-# We define the CUTOFF point based on the layer list.
-# Index 30 corresponds to 'bottle_conv2', the start of the deep layers.
-CUTOFF_INDEX = 30 
-
-print(f"Strategy: Freezing layers 0-{CUTOFF_INDEX-1}. Unfreezing layers {CUTOFF_INDEX}+ (Deep Blocks)...")
-
-for i, layer in enumerate(encoder.layers):
-    if i < CUTOFF_INDEX:
-        # Layers 0 to 29 (Early vision) -> LOCKED
-        layer.trainable = False
-    else:
-        # Layers 30 to 39 (Deep Bottleneck + Output) -> UNLOCKED
-        layer.trainable = True
-        print(f"   -> Unlocked: [{i}] {layer.name}")
-
-# ==========================================
-
-# Add classification head
+# Initial State: Freeze Encoder
+for layer in encoder.layers:
+    layer.trainable = False
 x = encoder.output
-# The encoder output is already a Dense vector (z_dim=200)
-# We just need to map 200 features -> 4 classes
-x = Dropout(0.5)(x) # Regularization
+x = Dropout(0.5)(x)
 predictions = Dense(4, activation='softmax', name='classification_head')(x)
-
-# Create final model
 classifier = Model(inputs=encoder.input, outputs=predictions)
 
-# Compile (Paper uses SGD, but Adam is often easier for quick results)
-classifier.compile(optimizer=Adam(learning_rate=LR), 
+# --- 5. STAGE 1: TRAIN HEAD ONLY ---
+print("\n--- STAGE 1: Training Head Only ---")
+classifier.compile(optimizer=Adam(learning_rate=LR_STAGE_1), 
                    loss='categorical_crossentropy', 
                    metrics=['accuracy'])
 
-classifier.summary()
-
-# --- 4. TRAIN ---
-print("Starting Fine-Tuning...")
-history = classifier.fit(
+history_stage1 = classifier.fit(
     train_generator,
-    epochs=EPOCHS,
-    validation_data=test_generator
+    epochs=EPOCHS_STAGE_1,
+    validation_data=test_generator,
+    class_weight=class_weights_dict,
+    callbacks=[ModelCheckpoint('./output/best_model_stage1.keras', save_best_only=True, monitor='val_loss')]
 )
 
-# --- 5. SAVE RESULTS ---
+# --- 6. STAGE 2: FINE-TUNE ENCODER ---
+print("\n--- STAGE 2: Fine-Tuning Encoder ---")
+for layer in encoder.layers:
+    if "batch_normalization" in layer.name:
+        layer.trainable = False # Keep BatchNorm frozen
+    else:
+        layer.trainable = True
+classifier.compile(optimizer=Adam(learning_rate=LR_STAGE_2), 
+                   loss='categorical_crossentropy', 
+                   metrics=['accuracy'])
+
+history_stage2 = classifier.fit(
+    train_generator,
+    epochs=EPOCHS_STAGE_2,
+    validation_data=test_generator,
+    class_weight=class_weights_dict,
+    callbacks=[ModelCheckpoint('./output/best_model_fine_tuned.keras', save_best_only=True, monitor='val_loss')]
+)
+
+# --- 7. SAVE & PLOT ---
+
 classifier.save('./output/final_classifier.keras')
 print("Model saved to ./output/final_classifier.keras")
 
-# Plot accuracy
-import matplotlib.pyplot as plt
-plt.figure(figsize=(10, 4))
+def append_history(history1, history2, metric):
+    return history1.history[metric] + history2.history[metric]
+
+acc = append_history(history_stage1, history_stage2, 'accuracy')
+val_acc = append_history(history_stage1, history_stage2, 'val_accuracy')
+loss = append_history(history_stage1, history_stage2, 'loss')
+val_loss = append_history(history_stage1, history_stage2, 'val_loss')
+plt.figure(figsize=(12, 5))
+
+# Accuracy Plot
 plt.subplot(1, 2, 1)
-plt.plot(history.history['accuracy'], label='Train Acc')
-plt.plot(history.history['val_accuracy'], label='Val Acc')
+plt.plot(acc, label='Train Acc')
+plt.plot(val_acc, label='Val Acc')
+plt.axvline(x=len(history_stage1.history['accuracy']), color='k', linestyle='--', label='Unfreeze Point')
 plt.title('Accuracy')
 plt.legend()
+
+# Loss Plot
 plt.subplot(1, 2, 2)
-plt.plot(history.history['loss'], label='Train Loss')
-plt.plot(history.history['val_loss'], label='Val Loss')
+plt.plot(loss, label='Train Loss')
+plt.plot(val_loss, label='Val Loss')
+plt.axvline(x=len(history_stage1.history['loss']), color='k', linestyle='--', label='Unfreeze Point')
 plt.title('Loss')
-plt.savefig('./output/classification_results.png')
+plt.legend()
+plt.savefig('./output/classification_results_combined.png')
 print("Results plot saved.")
