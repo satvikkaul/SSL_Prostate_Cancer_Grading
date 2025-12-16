@@ -1,0 +1,19 @@
+# Ignore the dataset
+dataset/
+*.jpg
+*.png
+*.csv
+
+# Ignore generated outputs and weights
+output/
+*.h5
+*.weights.h5
+*.pkl
+
+# Ignore python system files
+__pycache__/
+*.pyc
+venv/
+.env
+.idea/
+.vscode/
