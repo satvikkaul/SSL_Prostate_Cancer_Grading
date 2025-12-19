@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from my_data_generator import DataGenerator, create_tf_dataset
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -10,11 +10,11 @@ import os
 # --- CONFIGURATION ---
 DATASET_DIR = './dataset'
 TEST_FILE = 'Test.csv'
-# IMPORTANT: We use the STABLE frozen model, not the unstable new one
-MODEL_PATH = './output/final_classifier.keras' 
-IMG_SIZE = (512, 512)
+# IMPORTANT: Use Stage 1 model (frozen encoder + conv features)
+MODEL_PATH = './output/best_model_stage1.keras'  # Stage 1 best checkpoint
+IMG_SIZE = (128, 128)  # MUST MATCH TRAINING! Model expects 128x128
 BATCH_SIZE = 16
-CLASS_NAMES = ['NC', 'G3', 'G4', 'G5']
+CLASS_NAMES = ['NC', 'G3', 'G5', 'G4']  # MUST match CSV column order!
 
 # 1. Load Test Data
 print(f"Loading test data from {TEST_FILE}...")
@@ -22,19 +22,21 @@ test_df = pd.read_csv(os.path.join(DATASET_DIR, TEST_FILE))
 # Ensure columns are strings
 test_df[CLASS_NAMES] = test_df[CLASS_NAMES].astype('float32')
 
-# 2. Setup Generator
-test_datagen = ImageDataGenerator(rescale=1./255)
-
-test_generator = test_datagen.flow_from_dataframe(
-    dataframe=test_df,
-    directory=os.path.join(DATASET_DIR, 'images'), # Adjust path if needed
-    x_col="image_name",
-    y_col=CLASS_NAMES,
-    target_size=IMG_SIZE,
+# 2. Setup Generator (MUST MATCH TRAIN SETTINGS)
+print("Setting up custom DataGenerator...")
+test_generator = DataGenerator(
+    data_frame=test_df,
+    y=IMG_SIZE[0], x=IMG_SIZE[1], target_channels=3,
+    y_cols=CLASS_NAMES,
     batch_size=BATCH_SIZE,
-    class_mode="raw",
-    shuffle=False # vital for confusion matrix!
+    path_to_img=os.path.join(DATASET_DIR, 'images'),
+    shuffle=False,  # Vital for matching predictions to true labels
+    data_augmentation=False,
+    mode='custom'
 )
+
+# Wrap in tf.data pipeline (optional for inference, but ensures consistency)
+test_dataset = create_tf_dataset(test_generator)
 
 # 3. Load the Best Model
 if not os.path.exists(MODEL_PATH):
@@ -43,11 +45,13 @@ if not os.path.exists(MODEL_PATH):
     exit()
 
 print(f"Loading model: {MODEL_PATH}")
-model = tf.keras.models.load_model(MODEL_PATH)
+# compile=False is CRITICAL here because we used a custom FocalLoss.
+# We don't need to train, only predict, so we skip compiling the loss function.
+model = tf.keras.models.load_model(MODEL_PATH, compile=False)
 
 # 4. Generate Predictions
 print("Running predictions (this may take a moment)...")
-predictions = model.predict(test_generator, verbose=1)
+predictions = model.predict(test_dataset, verbose=1)
 
 # Convert probabilities to class indices (0, 1, 2, 3)
 y_pred = np.argmax(predictions, axis=1)

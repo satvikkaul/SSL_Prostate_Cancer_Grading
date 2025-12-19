@@ -14,23 +14,23 @@ import matplotlib.pyplot as plt
 from PIL import Image,ImageOps
 import pickle
 #%%
-# Hyper-parametrs
-input_dim = (512, 512, 3)
+# Hyper-parametrs (MATCHING PAPER: 128x128 patches!)
+input_dim = (128, 128, 3)  # Paper uses 128x128, NOT 512x512!
 encoder_conv_filters = [16, 32, 64, 128, 256]
 encoder_conv_kernel_size = [3, 3, 3, 3, 3]
 encoder_conv_strides = [2, 2, 2, 2, 2]
-bottle_conv_filters = [64, 32, 1, 256]
-bottle_conv_kernel_size = [3, 3, 3, 3]
-bottle_conv_strides = [1, 1, 1, 1]
+bottle_conv_filters = [128, 64, 128]  # Removed 1-filter bottleneck, cleaner architecture
+bottle_conv_kernel_size = [3, 3, 3]
+bottle_conv_strides = [1, 1, 1]
 decoder_conv_t_filters = [128, 64, 32, 16, 3]
 decoder_conv_t_kernel_size = [3, 3, 3, 3, 3]
 decoder_conv_t_strides = [2, 2, 2, 2, 2]
-bottle_dim = (32, 32, 256)
-z_dim = 200
+bottle_dim = (16, 16, 128)  # Updated to match new bottleneck architecture
+z_dim = 256  # Increased from 200 for better feature capacity
 r_loss_factor = 10000
 lr = 0.0005
 batch_size = 16
-epochs = 5
+epochs = 15  # Reduced from 5 to prevent overfitting to pixel-perfect reconstruction
 is_training = True
 conv_layeri=[]
 conv_t_layeri=[]

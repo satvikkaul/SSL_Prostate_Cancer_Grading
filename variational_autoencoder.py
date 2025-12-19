@@ -83,19 +83,14 @@ class ConvVarAutoencoder:
             if use_batch_norm:
                 x = BatchNormalization(axis=-1)(x)
 
-            x = LeakyReLU(alpha=0.2)(x)
+            x = LeakyReLU(negative_slope=0.2)(x)
 
             if use_dropout:
-                x = Dropout(rate=0.25)(x)
-            if (i == 2 ):
-                conv_layer_if = Conv2D(filters=self.encoder_conv_filters[i],
-                            kernel_size=self.encoder_conv_kernel_size[i],
-                            strides=1,
-                            padding='same',
-                            name='encoder_conv_if'+str(i))
-                x = conv_layer_if (x)
-                conv_layeri = x
-                print("Skip layer"+ str(i))
+                x = Dropout(rate=0.1)(x)  # Reduced from 0.25 to 0.1 for SSL
+            # Save skip connection at encoder layer 2 (output shape: 64x64x64)
+            if (i == 2):
+                conv_layeri = x  # Save directly without extra conv
+                print("Skip layer saved at encoder i=" + str(i))
                 
                 # Defining the bottle part
         
@@ -114,15 +109,15 @@ class ConvVarAutoencoder:
             if use_batch_norm:
                 x_bottle = BatchNormalization(axis=-1)(x_bottle)
 
-            x_bottle = LeakyReLU(alpha=0.2)(x_bottle)
+            x_bottle = LeakyReLU(negative_slope=0.2)(x_bottle)
 
             if use_dropout:
-                x_bottle = Dropout(rate=0.25)(x_bottle)
+                x_bottle = Dropout(rate=0.1)(x_bottle)  # Reduced from 0.25 to 0.1
                 
         shape_before_flattening = K.int_shape(x_bottle)[1:]
         # import pdb; pdb.set_trace()
-        x_out_bottle =  x_bottle + x
-        x_out_bottle = Flatten()(x_out_bottle)
+        # Removed residual bypass: x_bottle + x (was allowing network to skip compression)
+        x_out_bottle = Flatten()(x_bottle)
         # encoder_output in Autoencoder Normal version
         
         # # encoder_output in Variational Autoencoder version
@@ -145,24 +140,16 @@ class ConvVarAutoencoder:
 
   
             if i < len(self.decoder_conv_t_filters) - 1:
-                x1 = BatchNormalization(axis=-1)(x1)
-                x1 = LeakyReLU(alpha=0.2)(x1)
                 x1 = conv_t_layer(x1)
-            else:
-                x1 = conv_t_layer (x1)
-                x1 = Activation('sigmoid')(x1)
-                
-            if (i == 1):
-                x1 = x1 + conv_layeri
-                # x1 = Add()([x1, conv_layeri])
+                # Add skip connection at decoder layer 1 (matches encoder layer 2)
+                if (i == 1):
+                    x1 = x1 + conv_layeri
+                    print("Skip connection added at decoder i=" + str(i))
                 x1 = BatchNormalization(axis=-1)(x1)
-                x1 = LeakyReLU(alpha=0.2)(x1)                
-                conv_t_layeri = Conv2DTranspose(filters=self.decoder_conv_t_filters[i],
-                                            kernel_size=self.decoder_conv_t_kernel_size[i],
-                                            strides=1 ,
-                                            padding='same' ,
-                                            name='decoder_convi_t'+str(i))
-                x1 = conv_t_layeri (x1)
+                x1 = LeakyReLU(negative_slope=0.2)(x1)
+            else:
+                x1 = conv_t_layer(x1)
+                x1 = Activation('sigmoid')(x1)
                 
         # decoder_output = Dense( 3 ,name='decoder_output')(x1)
         decoder_output = x1
