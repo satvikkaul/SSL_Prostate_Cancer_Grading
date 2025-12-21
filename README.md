@@ -444,6 +444,11 @@ This comprehensive comparison strengthens the project by showing:
 
 ## Project Team
 
+**Authors:**
+- Parsa Ranjbaran (Student ID: 501037874)
+- Abdur Qadeer (Student ID: 500967819)
+- Satvik Kaul (Student ID: 501312329)
+
 **Course:** CP8321 Deep Learning  
 **Institution:** Toronto Metropolitan University (Ryerson University)  
 **Term:** Fall 2025

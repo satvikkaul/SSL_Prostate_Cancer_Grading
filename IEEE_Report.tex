@@ -1,9 +1,10 @@
 \documentclass[conference]{IEEEtran}
 \IEEEoverridecommandlockouts
-% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
 
+% ==================== Packages (IEEE-friendly) ====================
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage{graphicx}
 \usepackage{textcomp}
@@ -12,7 +13,22 @@
 \usepackage{multirow}
 \usepackage{array}
 \usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage[caption=false,font=footnotesize]{subfig} % recommended for IEEEtran
+\usepackage{siunitx}
+\usepackage{fancyhdr}
 
+% ==================== Page numbers (bottom-center) ====================
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% ==================== Helpers ====================
+\newcommand{\vect}[1]{\mathbf{#1}}
+\newcommand{\argmax}{\operatornamewithlimits{arg\,max}}
+\newcommand{\argmin}{\operatornamewithlimits{arg\,min}}
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 
@@ -24,617 +40,577 @@
 
 \author{
 \IEEEauthorblockN{Parsa Ranjbaran}
-\IEEEauthorblockA{\textit{Department of Computer Science} \\
+\IEEEauthorblockA{\textit{Department of Computer Science}\\
 \textit{Toronto Metropolitan University}\\
-Toronto, Canada \\
+Toronto, Canada\\
 Student ID: 501037874}
 \and
 \IEEEauthorblockN{Abdur Qadeer}
-\IEEEauthorblockA{\textit{Department of Computer Science} \\
+\IEEEauthorblockA{\textit{Department of Computer Science}\\
 \textit{Toronto Metropolitan University}\\
-Toronto, Canada \\
+Toronto, Canada\\
 Student ID: 500967819}
 \and
 \IEEEauthorblockN{Satvik Kaul}
-\IEEEauthorblockA{\textit{Department of Computer Science} \\
+\IEEEauthorblockA{\textit{Department of Computer Science}\\
 \textit{Toronto Metropolitan University}\\
-Toronto, Canada \\
+Toronto, Canada\\
 Student ID: 501312329}
 }
 
 \maketitle
+\thispagestyle{fancy} % ensure page number shows on first page as well
 
 \begin{abstract}
-Self-supervised learning (SSL) has emerged as a promising paradigm for medical image analysis, particularly in scenarios with limited labeled data. This work presents a comprehensive comparison of three learning strategies for prostate cancer histopathology classification using the SICAPv2 dataset: (1) supervised learning from random initialization (baseline), (2) reconstruction-based SSL using convolutional autoencoders, and (3) contrastive learning using SimCLR. We evaluate these approaches on a four-class Gleason grading task (Non-Cancerous, G3, G4, G5) with approximately 18,000 histopathology image patches. Our results demonstrate that reconstruction-based SSL achieves 62.8\% accuracy with Cohen's $\kappa$ = 0.500, significantly outperforming the baseline (47.6\%, $\kappa$ = 0.341). However, SimCLR contrastive learning unexpectedly underperformed (37.6\%, $\kappa$ = 0.067), revealing critical insights about hyperparameter sensitivity and domain-specific challenges in histopathology SSL. We provide detailed analysis of this failure, discussing potential causes including augmentation strategy, learning rate selection, and batch size constraints. This work contributes empirical evidence for SSL effectiveness in medical imaging while highlighting the importance of careful hyperparameter tuning for contrastive methods.
+Self-supervised learning (SSL) is increasingly used in medical imaging to learn transferable features when labels are limited or expensive. This work presents a controlled comparison of three learning strategies for prostate histopathology grading on the SICAPv2 dataset: (1) supervised learning from random initialization (baseline), (2) reconstruction-based SSL using a convolutional autoencoder (CAE), and (3) contrastive SSL using SimCLR with NT-Xent loss. All methods share the same encoder backbone to isolate the effect of representation learning. We evaluate downstream performance on four Gleason categories (Non-Cancerous, Grade 3, Grade 4, Grade 5) and report accuracy, macro and weighted F1, Cohen's $\kappa$, confusion matrices, and ROC curves. Reconstruction-based SSL substantially improves over the baseline (62.8\% vs.\ 47.6\% accuracy; $\kappa$ 0.500 vs.\ 0.341), while SimCLR underperforms in our compute-constrained setting (37.6\% accuracy; $\kappa$ 0.067) and collapses minority-grade predictions. We provide a detailed analysis explaining why contrastive SSL can fail in histopathology when batch size and augmentation regimes are not tuned to the domain, and we document actionable remedies for future work.
 \end{abstract}
 
 \begin{IEEEkeywords}
-self-supervised learning, contrastive learning, histopathology, prostate cancer, deep learning, medical imaging, SimCLR, autoencoder
+self-supervised learning, contrastive learning, histopathology, prostate cancer, Gleason grading, medical imaging, SimCLR, autoencoder
 \end{IEEEkeywords}
 
+% =========================================================
 \section{Introduction}
+% =========================================================
+Prostate cancer is among the most prevalent malignancies in men, and histopathology-based Gleason grading is a clinical standard for assessing tumor aggressiveness and guiding treatment decisions. Manual grading is time-consuming and can vary across pathologists, motivating automated approaches \cite{gleason2002,nagpal2019}. Deep learning models have achieved strong results on pathology classification tasks, but traditional supervised training requires large labeled datasets and can generalize poorly under stain variation and dataset shift.
 
-Prostate cancer is one of the most prevalent malignancies affecting men worldwide, with Gleason grading serving as the gold standard for assessing tumor aggressiveness \cite{gleason2002}. Accurate Gleason scoring from histopathology images is critical for treatment planning but requires significant pathologist expertise and is subject to inter-observer variability. Deep learning has shown promise in automating this process \cite{nagpal2019}, yet requires substantial amounts of labeled data for effective training.
+Self-supervised learning (SSL) provides a practical alternative by learning visual representations from unlabeled data using pretext objectives, then transferring those representations to downstream classification. In natural image settings, contrastive SSL methods such as SimCLR \cite{chen2020simclr} and MoCo \cite{he2020moco} often match or exceed supervised pretraining. However, histopathology introduces domain-specific challenges: subtle morphological differences between grades, high stain variability, and severe class imbalance. Additionally, many contrastive objectives assume large batch sizes (or many negatives), which may be infeasible under GPU memory constraints.
 
-Self-supervised learning (SSL) offers a compelling solution by enabling models to learn meaningful representations from unlabeled data before fine-tuning on limited labeled samples \cite{chen2020simclr}. Recent advances in SSL for medical imaging have demonstrated substantial improvements over training from scratch \cite{ciga2020}, with domain-specific pretraining outperforming ImageNet transfer learning \cite{stacke2021}.
-
-In this work, we conduct a systematic comparison of three learning paradigms for prostate cancer histopathology classification:
-
+\subsection{Project Goal and Scope}
+This project evaluates SSL for patch-level Gleason grading using SICAPv2. We compare:
 \begin{itemize}
-    \item \textbf{Baseline}: Supervised learning with random initialization
-    \item \textbf{Reconstruction-based SSL}: Convolutional autoencoder pretraining
-    \item \textbf{Contrastive SSL}: SimCLR framework with NT-Xent loss
+    \item \textbf{Baseline (Supervised from Scratch):} End-to-end supervised training with random initialization.
+    \item \textbf{Reconstruction-based SSL (CAE):} Unsupervised pretraining via image reconstruction followed by classification training.
+    \item \textbf{Contrastive SSL (SimCLR):} Pretraining with augmented-view contrastive learning followed by classification training.
 \end{itemize}
+All approaches use the same encoder backbone to ensure a fair comparison.
 
 \subsection{Contributions}
-
-Our main contributions are:
-
 \begin{enumerate}
-    \item A comprehensive implementation and comparison of three learning strategies on the SICAPv2 prostate cancer dataset
-    \item Empirical validation that reconstruction-based SSL significantly improves classification performance (+15.2\% over baseline)
-    \item Critical analysis of SimCLR failure, identifying key challenges in applying contrastive learning to histopathology
-    \item Open-source implementation with detailed training guides for reproducibility
-    \item Quantitative analysis of per-class performance, revealing persistent challenges with minority class recognition
+    \item A controlled, apples-to-apples comparison of supervised, reconstruction-based SSL, and contrastive SSL on SICAPv2.
+    \item Empirical evidence that CAE-style SSL can significantly improve downstream grading performance in this setting.
+    \item A detailed failure analysis of SimCLR under compute constraints, grounded in observed metrics and plots.
+    \item A reproducible codebase and reporting artifacts, including consolidated comparison plots, training curves, confusion matrices, and ROC curves.
 \end{enumerate}
 
-\section{Related Work}
-
-\subsection{Self-Supervised Learning in Computer Vision}
-
-Self-supervised learning has revolutionized computer vision by learning representations without manual annotations. Contrastive learning methods, particularly SimCLR \cite{chen2020simclr} and MoCo \cite{he2020moco}, have achieved remarkable success by maximizing agreement between differently augmented views of the same image while minimizing similarity to other images.
-
-\subsection{SSL for Medical Imaging}
-
-Medical imaging presents unique challenges for SSL due to domain-specific characteristics. Ciga et al. \cite{ciga2020} demonstrated that SSL trained on histopathology data substantially outperforms ImageNet pretraining, achieving superior performance across 57 medical imaging datasets. Their work established contrastive learning as state-of-the-art for digital pathology.
-
-Stacke et al. \cite{stacke2021} further refined SSL for histopathology, emphasizing the importance of domain-appropriate augmentations. They found that color jittering is essential due to staining variations, while standard geometric transforms proved less critical.
-
-\subsection{Prostate Cancer Grading}
-
-The SICAP dataset \cite{silva2019sicap} provides standardized prostate cancer histopathology images with Gleason grading annotations. Recent work by Pinckaers et al. \cite{pinckaers2025} specifically addresses SSL for prostate cancer grading using task-specific stain-agnostic features, achieving state-of-the-art results on this dataset.
-
-Our work builds on these foundations by conducting a controlled comparison of reconstruction-based and contrastive SSL approaches, providing insights into their relative effectiveness and implementation challenges.
-
-\section{Methodology}
-
-\subsection{Dataset}
-
-We utilize the SICAPv2 dataset \cite{silva2019sicap}, which contains approximately 18,000 histopathology image patches (128×128×3 RGB) extracted from prostate tissue whole-slide images. The dataset includes four Gleason grade categories:
-
+% =========================================================
+\section{Background and Related Work}
+% =========================================================
+\subsection{Self-Supervised Learning in Vision}
+SSL defines a supervised-like objective using automatically generated pseudo-labels. Two dominant paradigms are:
 \begin{itemize}
-    \item \textbf{NC (Non-Cancerous)}: Benign tissue (30.4\% of dataset)
-    \item \textbf{G3 (Grade 3)}: Well-differentiated cancer (18.5\%)
-    \item \textbf{G4 (Grade 4)}: Moderately differentiated cancer (40.2\%)
-    \item \textbf{G5 (Grade 5)}: Poorly differentiated cancer (10.9\%)
+    \item \textbf{Reconstruction-based SSL:} Learn features by reconstructing inputs (often with an encoder-decoder). This can emphasize local texture and structure.
+    \item \textbf{Contrastive SSL:} Learn features by pulling together two augmented views of the same sample and pushing apart representations from different samples. SimCLR \cite{chen2020simclr} popularized a simple framework using strong augmentations and large-batch training.
 \end{itemize}
 
-The dataset exhibits significant class imbalance, with G5 being substantially underrepresented. We follow the official train/test split provided with the dataset, maintaining approximately 80\%/20\% division.
+\subsection{SSL in Digital Pathology}
+Histopathology has unique properties: staining differences can be larger than inter-class differences; discriminative evidence is often localized; and classes frequently form an ordinal continuum (e.g., Gleason grades). Prior work demonstrated that SSL trained directly on pathology data can outperform ImageNet transfer learning \cite{ciga2020}. Domain shift analyses emphasize that augmentation policies should be tailored to staining and tissue morphology \cite{stacke2021}. Standard stain normalization approaches (e.g., Macenko) are frequently used to reduce stain variability, though we do not apply explicit stain normalization in this project \cite{macenko2009}.
 
-\subsection{Network Architecture}
+\subsection{Prostate Cancer Grading}
+SICAP provides a curated set of prostate tissue patches with Gleason annotations \cite{silva2019sicap}. In patch classification, minor grades are often confused with dominant classes, and Grade 5 can be difficult to learn due to both limited examples and morphological overlap with Grade 4.
 
-All three approaches share a common convolutional encoder architecture to ensure fair comparison:
+% =========================================================
+\section{Dataset and Preprocessing}
+% =========================================================
+\subsection{Dataset}
+We use SICAPv2 \cite{silva2019sicap}, composed of approximately 18,000 RGB patches of size $128 \times 128$. We follow the provided train/test split.
 
-\begin{table}[h]
+\subsection{Class Definitions and Imbalance}
+We model four categories: NC, G3, G4, and G5. The dataset is imbalanced. Table~\ref{tab:classdist} summarizes the approximate class distribution (percentages).
+
+\begin{table}[t]
+\centering
+\caption{Approximate Class Distribution (SICAPv2)}
+\label{tab:classdist}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Class} & \textbf{Meaning} & \textbf{Approx.\ Share} \\
+\midrule
+NC & Non-cancerous & 30.4\% \\
+G3 & Gleason grade 3 & 18.5\% \\
+G4 & Gleason grade 4 & 40.2\% \\
+G5 & Gleason grade 5 & 10.9\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Preprocessing}
+All images are normalized to $[0,1]$. No stain normalization is applied. Augmentations are applied as follows:
+\begin{itemize}
+    \item \textbf{Baseline and downstream fine-tuning:} mild geometric and color transforms.
+    \item \textbf{SimCLR pretraining:} strong augmentations that define invariances for the contrastive objective.
+\end{itemize}
+
+\subsection{Evaluation Artifact Class Ordering (Important)}
+Several evaluation artifacts (confusion matrices and ROC curves) were generated with the internal label order:
+\[
+[\text{NC}, \text{G3}, \text{G5}, \text{G4}]
+\]
+This ordering is consistent across the baseline and SimCLR confusion matrices in the saved plots. We explicitly state this order in captions and in the error analysis to avoid ambiguity.
+
+% =========================================================
+\section{Methodology}
+% =========================================================
+\subsection{Shared Encoder Backbone}
+All methods use the same convolutional encoder for fair comparison. The encoder produces a 256-dimensional feature vector. Table~\ref{tab:encoder} details the architecture.
+
+\begin{table}[t]
 \centering
 \caption{Shared Encoder Architecture}
 \label{tab:encoder}
+\small
 \begin{tabular}{@{}lcccc@{}}
 \toprule
 \textbf{Layer} & \textbf{Filters} & \textbf{Kernel} & \textbf{Stride} & \textbf{Output} \\
 \midrule
-Input & - & - & - & 128×128×3 \\
-Conv2D + BN + ReLU & 16 & 3×3 & 2 & 64×64×16 \\
-Conv2D + BN + ReLU & 32 & 3×3 & 2 & 32×32×32 \\
-Conv2D + BN + ReLU & 64 & 3×3 & 2 & 16×16×64 \\
-Conv2D + BN + ReLU & 128 & 3×3 & 2 & 8×8×128 \\
-Conv2D + BN + ReLU & 256 & 3×3 & 2 & 4×4×256 \\
+Input & - & - & - & $128\times128\times3$ \\
+Conv2D + BN + ReLU & 16 & $3\times3$ & 2 & $64\times64\times16$ \\
+Conv2D + BN + ReLU & 32 & $3\times3$ & 2 & $32\times32\times32$ \\
+Conv2D + BN + ReLU & 64 & $3\times3$ & 2 & $16\times16\times64$ \\
+Conv2D + BN + ReLU & 128 & $3\times3$ & 2 & $8\times8\times128$ \\
+Conv2D + BN + ReLU & 256 & $3\times3$ & 2 & $4\times4\times256$ \\
 Flatten & - & - & - & 4096 \\
 Dense & 256 & - & - & 256 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The encoder produces 256-dimensional feature representations, which are subsequently used for different objectives depending on the SSL approach.
+\subsection{Baseline Supervised Training}
+The baseline trains encoder and classifier end-to-end with random initialization. The classifier head is an MLP: $256 \rightarrow 128 \rightarrow 4$ with softmax.
 
-\subsection{Approach 1: Baseline (No SSL)}
-
-The baseline approach trains the classification model from scratch with random weight initialization. The architecture consists of:
-
-\begin{itemize}
-    \item Shared encoder (Table \ref{tab:encoder})
-    \item Dense classification head: 256 → 128 → 4 (softmax)
-\end{itemize}
-
-\textbf{Training Configuration:}
-\begin{itemize}
-    \item Loss: Focal Loss with $\alpha=0.5$, $\gamma=2.0$ \cite{lin2017focal}
-    \item Optimizer: SGD with momentum=0.9
-    \item Learning rate: $10^{-5}$ (constant)
-    \item Batch size: 8
-    \item Epochs: 50
-    \item Data augmentation: Random flips, rotations, slight color jitter
-\end{itemize}
-
-Focal loss is employed to address severe class imbalance:
-
+\subsubsection{Focal Loss for Imbalance}
+We use focal loss \cite{lin2017focal}:
 \begin{equation}
-\text{FL}(p_t) = -\alpha_t(1-p_t)^\gamma \log(p_t)
+\mathrm{FL}(p_t) = -\alpha_t (1-p_t)^\gamma \log(p_t)
 \end{equation}
+where $p_t$ is the predicted probability assigned to the true class, $\alpha_t$ balances classes, and $\gamma$ emphasizes hard examples.
 
-where $p_t$ is the model's estimated probability for the true class, $\alpha_t$ balances class importance, and $\gamma$ focuses learning on hard examples.
-
-\subsection{Approach 2: Autoencoder SSL}
-
-Reconstruction-based SSL learns representations by encoding and reconstructing input images without requiring labels.
-
-\textbf{Pretraining Phase:}
-\begin{itemize}
-    \item \textbf{Encoder}: Shared architecture (Table \ref{tab:encoder})
-    \item \textbf{Bottleneck}: 256 → 128 → 64 → 128 → 256
-    \item \textbf{Decoder}: Symmetric transpose convolutions
-    \item \textbf{Loss}: Mean Squared Error (MSE) reconstruction loss
-\end{itemize}
-
+\subsection{Reconstruction-based SSL (Convolutional Autoencoder)}
+The CAE pretraining stage optimizes an encoder-decoder to reconstruct the input. After pretraining, the decoder is discarded and the encoder initializes the downstream classifier.
 \begin{equation}
-\mathcal{L}_{\text{recon}} = \frac{1}{N}\sum_{i=1}^{N} \|\mathbf{x}_i - \hat{\mathbf{x}}_i\|^2
+\mathcal{L}_{\text{recon}} = \frac{1}{N}\sum_{i=1}^{N}\left\|\vect{x}_i - \hat{\vect{x}}_i\right\|_2^2
 \end{equation}
+This objective encourages capturing tissue texture, gland morphology, and stain-related statistics that can transfer to grading.
 
-where $\mathbf{x}_i$ is the input image and $\hat{\mathbf{x}}_i$ is the reconstruction.
-
-\textbf{Fine-tuning Phase:}
-After pretraining, the encoder is frozen and a classification head is trained:
-\begin{itemize}
-    \item Stage 1 (50 epochs): Frozen encoder + new classification head
-    \item Stage 2 (optional): Full network fine-tuning with lower learning rate
-\end{itemize}
-
-\subsection{Approach 3: SimCLR Contrastive SSL}
-
-SimCLR \cite{chen2020simclr} learns representations by maximizing agreement between differently augmented views of the same image.
-
-\textbf{Augmentation Pipeline:}
-We implement strong augmentations specifically designed for histopathology \cite{stacke2021}:
-
-\begin{itemize}
-    \item Random cropping (80-100\% of original size)
-    \item Random horizontal/vertical flips
-    \item Random rotation ($\pm$90°)
-    \item Color jittering: brightness/contrast/saturation $\pm$40\%
-    \item Gaussian blur ($\sigma \in [0.1, 2.0]$)
-    \item Sharpening (50\% probability)
-\end{itemize}
-
-\textbf{SimCLR Architecture:}
-\begin{itemize}
-    \item \textbf{Encoder}: Shared architecture producing 256-dim features
-    \item \textbf{Projection Head}: 256 → 256 (ReLU) → 128 (L2-normalized)
-\end{itemize}
-
-\textbf{NT-Xent Loss:}
-The Normalized Temperature-scaled Cross Entropy loss is computed as:
-
+\subsection{Contrastive SSL (SimCLR)}
+SimCLR \cite{chen2020simclr} forms positive pairs from two augmentations of the same image and treats other images in the batch as negatives. A projection head maps encoder features to a contrastive space:
+\[
+\vect{h} = f_\theta(\vect{x}), \quad \vect{z} = g_\phi(\vect{h}), \quad \vect{z} \leftarrow \frac{\vect{z}}{\|\vect{z}\|_2}
+\]
+The NT-Xent loss is:
 \begin{equation}
-\ell(i,j) = -\log\frac{\exp(\text{sim}(\mathbf{z}_i,\mathbf{z}_j)/\tau)}{\sum_{k=1}^{2N} \mathbb{1}_{[k\neq i]}\exp(\text{sim}(\mathbf{z}_i,\mathbf{z}_k)/\tau)}
+\ell(i,j) = -\log\frac{\exp(\mathrm{sim}(\vect{z}_i,\vect{z}_j)/\tau)}
+{\sum_{k=1}^{2N}\mathbb{1}_{[k\neq i]}\exp(\mathrm{sim}(\vect{z}_i,\vect{z}_k)/\tau)}
 \end{equation}
+where $\mathrm{sim}(\cdot,\cdot)$ is cosine similarity, $N$ is batch size, and $\tau$ is a temperature hyperparameter.
 
-where $\mathbf{z}_i$ and $\mathbf{z}_j$ are L2-normalized projections of two augmented views, $\text{sim}(\cdot,\cdot)$ is cosine similarity, $\tau$ is temperature (0.5), and $N$ is batch size.
+\subsubsection{Augmentation Policies}
+Augmentations define the invariances SimCLR learns. Table~\ref{tab:augs} summarizes the applied policies.
 
-The total loss averages over all positive pairs:
+\begin{table}[t]
+\centering
+\caption{Augmentation Policies by Training Stage}
+\label{tab:augs}
+\tiny
+\begin{tabular}{@{}lp{5cm}@{}}
+\toprule
+\textbf{Stage} & \textbf{Augmentations} \\
+\midrule
+Baseline/FT & H/V flips; small rot.; mild color jitter \\
+SimCLR & Crop (80-100\%); flips; rot. ($\pm$90$^\circ$); color jitter (b/c/s $\pm$40\%); Gaussian blur ($\sigma$[0.1,2.0]); sharpen (p=0.5) \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\begin{equation}
-\mathcal{L}_{\text{NT-Xent}} = \frac{1}{2N}\sum_{k=1}^{N}[\ell(2k-1,2k) + \ell(2k,2k-1)]
-\end{equation}
-
-\textbf{Pretraining Configuration:}
-\begin{itemize}
-    \item Batch size: 64 (effective: 128 views)
-    \item Learning rate: $10^{-3}$ with cosine decay
-    \item Optimizer: Adam
-    \item Epochs: 30
-    \item Temperature: $\tau = 0.5$
-\end{itemize}
-
-\textbf{Fine-tuning:}
-Similar to autoencoder, the encoder is frozen and a classification head is trained using focal loss.
+\subsection{Downstream Training Protocol}
+For CAE and SimCLR, we train a classifier head on top of the (pretrained) encoder using focal loss. To isolate representation quality, our final experiments use a frozen encoder during fine-tuning (linear evaluation style). This is a common diagnostic protocol in SSL literature.
 
 \subsection{Evaluation Metrics}
-
-We employ comprehensive metrics to assess model performance:
-
+We report:
 \begin{itemize}
-    \item \textbf{Overall Accuracy}: Percentage of correctly classified samples
-    \item \textbf{Per-class Precision, Recall, F1-Score}: Class-specific performance
-    \item \textbf{Cohen's Kappa ($\kappa$)}: Agreement accounting for chance
+    \item \textbf{Accuracy:} $\frac{1}{M}\sum_{i=1}^M \mathbb{1}[\hat{y}_i = y_i]$.
+    \item \textbf{Macro-F1:} unweighted mean of per-class F1.
+    \item \textbf{Weighted-F1:} F1 weighted by class support.
+    \item \textbf{Cohen's $\kappa$:} agreement corrected for chance:
     \begin{equation}
-    \kappa = \frac{p_o - p_e}{1 - p_e}
+        \kappa = \frac{p_o - p_e}{1 - p_e}
     \end{equation}
-    where $p_o$ is observed agreement and $p_e$ is expected agreement by chance
-    \item \textbf{Macro/Weighted F1-Score}: Aggregate performance metrics
-    \item \textbf{AUC-ROC}: Area under receiver operating characteristic curve (per-class)
-    \item \textbf{Confusion Matrix}: Detailed misclassification patterns
+    where $p_o$ is observed agreement and $p_e$ is expected agreement by chance.
+    \item \textbf{ROC and AUC:} one-vs-rest ROC for each class (when probabilities are available).
 \end{itemize}
 
-\section{Experimental Setup}
+% =========================================================
+\section{Experimental Setup and Reproducibility}
+% =========================================================
+\subsection{Implementation}
+All models were implemented in TensorFlow (Keras). Experiments were run in Google Colab. The complete codebase, scripts, and run instructions are available at:
+\url{https://github.com/satvikkaul/SSL_Prostate_Cancer_Grading}
 
-\subsection{Implementation Details}
-
-All models were implemented in TensorFlow 2.12 with Keras 3.0. Training was conducted on Google Colab Pro using NVIDIA A100 GPU (40GB). The complete codebase is available at: \url{https://github.com/satvikkaul/SSL_Prostate_Cancer_Grading}
-
-\subsection{Data Preprocessing}
-
-Images were normalized to [0, 1] range. For baseline and fine-tuning phases, we applied mild augmentation (random flips, slight rotations). For SimCLR pretraining, strong augmentations were applied as detailed in Section III-E.
-
-\subsection{Training Protocol}
-
-\begin{enumerate}
-    \item \textbf{Baseline}: Direct training for 50 epochs ($\sim$1.5 hours)
-    \item \textbf{Autoencoder}: Pretraining (previously completed) + fine-tuning for 50 epochs
-    \item \textbf{SimCLR}: Pretraining for 30 epochs ($\sim$2.5 hours) + fine-tuning for 50 epochs ($\sim$1 hour)
-\end{enumerate}
-
-All experiments used the same train/test split to ensure fair comparison.
-
-\section{Results}
-
-\subsection{Overall Performance}
-
-Table \ref{tab:overall} presents the overall performance comparison across all three approaches.
+\subsection{Key Hyperparameters}
+Table~\ref{tab:hyper} lists the primary hyperparameters.
 
 \begin{table}[h]
+\centering
+\caption{Key Hyperparameters}
+\label{tab:hyper}
+\tiny
+\begin{tabular}{@{}lc@{}}
+\toprule
+\textbf{Param} & \textbf{Val} \\
+\midrule
+\multicolumn{2}{@{}l@{}}{\textit{Baseline}} \\
+Opt & SGD \\
+LR & $10^{-5}$ \\
+Batch & 8 \\
+Epochs & 50 \\
+\midrule
+\multicolumn{2}{@{}l@{}}{\textit{SimCLR}} \\
+Opt & Adam \\
+LR & $10^{-3}\!\rightarrow\!10^{-4}$ \\
+Batch & 64 \\
+Epochs & 30 \\
+Temp & 0.5 \\
+\midrule
+\multicolumn{2}{@{}l@{}}{\textit{Fine-tune}} \\
+Loss & Focal \\
+Epochs & 50 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Algorithmic Summary}
+Algorithm~\ref{alg:simclr} summarizes SimCLR pretraining.
+
+\begin{algorithm}[t]
+\caption{SimCLR Pretraining (High-Level)}
+\label{alg:simclr}
+\begin{algorithmic}[1]
+\STATE Initialize encoder $f_\theta$, projection head $g_\phi$
+\FOR{each epoch}
+  \FOR{each batch $\{\vect{x}_k\}_{k=1}^N$}
+    \STATE Sample augmentations $t,t'$
+    \STATE Create two views: $\vect{x}_k^a = t(\vect{x}_k)$, $\vect{x}_k^b = t'(\vect{x}_k)$
+    \STATE Compute projections: $\vect{z}_k^a = \mathrm{norm}(g_\phi(f_\theta(\vect{x}_k^a)))$, $\vect{z}_k^b = \mathrm{norm}(g_\phi(f_\theta(\vect{x}_k^b)))$
+    \STATE Compute NT-Xent loss across $2N$ views
+    \STATE Update $\theta,\phi$ via gradient descent
+  \ENDFOR
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+% =========================================================
+\section{Results}
+% =========================================================
+\subsection{Overall Performance}
+Table~\ref{tab:overall} reports the primary downstream metrics. CAE SSL substantially improves over training from scratch, while SimCLR underperforms in our setting.
+
+\begin{table}[t]
 \centering
 \caption{Overall Performance Comparison}
 \label{tab:overall}
+\tiny
 \begin{tabular}{@{}lcccc@{}}
 \toprule
-\textbf{Model} & \textbf{Accuracy} & \textbf{Macro F1} & \textbf{Weighted F1} & \textbf{Cohen's $\kappa$} \\
+\textbf{Model} & \textbf{Acc} & \textbf{Mac-F1} & \textbf{Wt-F1} & \textbf{$\kappa$} \\
 \midrule
-Baseline & 0.476 & 0.310 & 0.420 & 0.341 \\
-Autoencoder & \textbf{0.628} & \textbf{0.390} & \textbf{0.620} & \textbf{0.500} \\
-SimCLR & 0.376 & 0.226 & 0.318 & 0.067 \\
+Baseline & .476 & .310 & .420 & .341 \\
+CAE-SSL & \textbf{.628} & \textbf{.390} & \textbf{.620} & \textbf{.500} \\
+SimCLR & .376 & .226 & .318 & .067 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Key Findings:}
-\begin{itemize}
-    \item Autoencoder SSL achieved best performance (62.8\% accuracy)
-    \item SSL provided +15.2\% improvement over baseline (47.6\% → 62.8\%)
-    \item SimCLR unexpectedly underperformed (37.6\%), even below baseline
-    \item Cohen's $\kappa$ confirms substantial agreement for Autoencoder (0.500 = moderate agreement)
-\end{itemize}
+\subsection{Consolidated Comparison Plot}
+Figure~\ref{fig:comparison} provides a high-level visual summary of the results across all methods.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{model_comparison_plots.png}
+\caption{Consolidated comparison across Baseline, Autoencoder-SSL, and SimCLR-SSL including accuracy, macro/weighted F1, Cohen's $\kappa$, and per-class recall.}
+\label{fig:comparison}
+\end{figure*}
+
+\subsection{Training Curves (Baseline and SimCLR Fine-tuning)}
+Figure~\ref{fig:train_curves} shows supervised baseline training curves and SimCLR downstream fine-tuning curves. These curves help interpret convergence and potential underfitting/overfitting behavior.
+
+\begin{figure*}[t]
+\centering
+\subfloat[Baseline supervised training (scratch).]{
+\includegraphics[width=0.485\textwidth]{baseline_training_curves.png}
+\label{fig:baseline_curves}}
+\hfil
+\subfloat[SimCLR downstream fine-tuning curves.]{
+\includegraphics[width=0.485\textwidth]{simclr_finetune_curves.png}
+\label{fig:simclr_finetune}}
+\caption{Training dynamics for (a) baseline end-to-end supervised training and (b) SimCLR feature transfer with a frozen encoder and a trained classifier head.}
+\label{fig:train_curves}
+\end{figure*}
+
+\subsection{Confusion Matrices (Baseline vs SimCLR)}
+Figure~\ref{fig:cms} compares confusion matrices. Both plots use the saved artifact ordering \textbf{[NC, G3, G5, G4]} on axes.
+
+\begin{figure*}[t]
+\centering
+\subfloat[Baseline confusion matrix (no SSL).]{
+\includegraphics[width=0.485\textwidth]{baseline_confusion_matrix.png}
+\label{fig:baseline_cm}}
+\hfil
+\subfloat[SimCLR confusion matrix.]{
+\includegraphics[width=0.485\textwidth]{simclr_confusion_matrix.png}
+\label{fig:simclr_cm}}
+\caption{Confusion matrices using artifact class order \textbf{[NC, G3, G5, G4]}. SimCLR collapses predictions for G5 (predicted-G5 column is entirely zero), and both models show substantial confusion between NC and G4.}
+\label{fig:cms}
+\end{figure*}
+
+\subsection{SimCLR Pretraining Dynamics and ROC Curves}
+Figure~\ref{fig:simclr_ssl_and_roc} summarizes SimCLR behavior during (a) SSL pretraining and (b) downstream discrimination via ROC curves. The ROC curves are one-vs-rest and follow artifact class order \textbf{[NC, G3, G5, G4]}.
+
+\begin{figure*}[t]
+\centering
+\subfloat[SimCLR SSL pretraining loss and learning-rate schedule.]{
+\includegraphics[width=0.485\textwidth]{simclr_pretrain_training_curves.png}
+\label{fig:simclr_pretrain}}
+\hfil
+\subfloat[SimCLR one-vs-rest ROC curves (artifact order).]{
+\includegraphics[width=0.485\textwidth]{simclr_roc_curves.png}
+\label{fig:simclr_roc}}
+\caption{SimCLR analysis: (a) contrastive pretraining dynamics and (b) downstream ROC curves, showing near-random discrimination for several classes in this setting.}
+\label{fig:simclr_ssl_and_roc}
+\end{figure*}
 
 \subsection{Per-Class Performance}
-
-Table \ref{tab:perclass} details class-specific metrics, revealing critical insights about model behavior across different Gleason grades.
+Table~\ref{tab:perclass} reports per-class metrics.
 
 \begin{table}[h]
 \centering
-\caption{Per-Class Performance Metrics}
+\caption{Per-Class Metrics}
 \label{tab:perclass}
-\small
-\begin{tabular}{@{}llccc@{}}
+\tiny
+\begin{tabular}{@{}lccc@{}}
 \toprule
-\textbf{Model} & \textbf{Class} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-Score} \\
+\textbf{Mdl/Cls} & \textbf{P} & \textbf{R} & \textbf{F1} \\
 \midrule
-\multirow{4}{*}{Baseline} 
- & NC & 0.497 & \textbf{0.744} & 0.596 \\
- & G3 & 0.149 & 0.066 & 0.092 \\
- & G4 & 0.516 & 0.592 & 0.552 \\
- & G5 & 0.000 & 0.000 & 0.000 \\
+\multicolumn{4}{@{}l@{}}{\textit{Baseline}} \\
+NC & .50 & .74 & .60 \\
+G3 & .15 & .07 & .09 \\
+G4 & .52 & .59 & .55 \\
+G5 & .00 & .00 & .00 \\
 \midrule
-\multirow{4}{*}{Autoencoder} 
- & NC & \textbf{0.800} & 0.850 & \textbf{0.830} \\
- & G3 & 0.140 & \textbf{0.130} & \textbf{0.130} \\
- & G4 & \textbf{0.540} & \textbf{0.650} & \textbf{0.590} \\
- & G5 & 0.000 & 0.000 & 0.000 \\
+\multicolumn{4}{@{}l@{}}{\textit{CAE}} \\
+NC & .80 & .85 & .83 \\
+G3 & .14 & .13 & .13 \\
+G4 & .54 & .65 & .59 \\
+G5 & .00 & .00 & .00 \\
 \midrule
-\multirow{4}{*}{SimCLR} 
- & NC & 0.332 & 0.517 & 0.404 \\
- & G3 & 0.114 & 0.013 & 0.023 \\
- & G4 & 0.427 & 0.538 & 0.476 \\
- & G5 & 0.000 & 0.000 & 0.000 \\
+\multicolumn{4}{@{}l@{}}{\textit{SimCLR}} \\
+NC & .33 & .52 & .40 \\
+G3 & .11 & .01 & .02 \\
+G4 & .43 & .54 & .48 \\
+G5 & .00 & .00 & .00 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Analysis:}
+\subsection{SimCLR AUC Summary}
+For SimCLR, per-class AUC values (one-vs-rest) are:
+NC: 0.543, G3: 0.497, G4: 0.527, G5: 0.449.
+These align with the ROC plot in Figure~\ref{fig:simclr_roc} and support the conclusion that the classifier exhibits near-random discrimination for multiple classes.
+
+% =========================================================
+\section{Error Analysis}
+% =========================================================
+\subsection{Minority Class Collapse (Grade 5)}
+A consistent failure mode across all approaches is the inability to recover Grade 5 (G5). Table~\ref{tab:perclass} shows $F1=0$ for G5 for baseline, CAE, and SimCLR. The confusion matrices in Figure~\ref{fig:cms} provide additional detail: SimCLR never predicts G5 at all, which indicates a strong collapse toward other classes (primarily NC and G4 under the artifact ordering).
+
+\subsection{Dominant Confusions}
+From Figure~\ref{fig:cms}, two dominant patterns appear:
 \begin{itemize}
-    \item \textbf{NC (Non-Cancerous)}: Autoencoder achieves best F1=0.830
-    \item \textbf{G3 (Grade 3)}: All models struggle (best F1=0.130)
-    \item \textbf{G4 (Grade 4)}: Autoencoder shows substantial improvement (F1=0.590 vs 0.552 baseline)
-    \item \textbf{G5 (Grade 5)}: Complete failure across all models (F1=0.000)
+    \item \textbf{NC vs G4 confusion:} Both models frequently confuse non-cancerous tissue with Grade 4. This can happen when benign tissue includes glandular structures or staining patterns that resemble malignant tissue under patch-level views.
+    \item \textbf{G3 mapped into G4:} G3 samples often shift toward G4, consistent with the ordinal continuum and morphological overlap between intermediate grades.
 \end{itemize}
 
-The G5 failure is attributed to severe class imbalance (10.9\% of dataset) and high visual similarity with G4 tissue.
+\subsection{Implications for Patch-Level Grading}
+Patch-level labels can be noisy relative to slide-level diagnosis. In particular, small crops may miss contextual patterns required to distinguish G3, G4, and G5 reliably. This limitation motivates either multi-scale patching, slide-level aggregation, or MIL-based methods, which are outside the scope of this project.
 
-\subsection{AUC-ROC Scores}
-
-Table \ref{tab:auc} presents Area Under the Curve (AUC) for Receiver Operating Characteristic curves, measuring discrimination capability.
-
-\begin{table}[h]
-\centering
-\caption{Per-Class AUC-ROC Scores}
-\label{tab:auc}
-\begin{tabular}{@{}lcccc@{}}
-\toprule
-\textbf{Model} & \textbf{NC} & \textbf{G3} & \textbf{G4} & \textbf{G5} \\
-\midrule
-Baseline & 0.797 & 0.509 & 0.671 & 0.589 \\
-Autoencoder & - & - & - & - \\
-SimCLR & 0.543 & 0.497 & 0.527 & 0.449 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\textit{Note: Autoencoder AUC scores were not available in our evaluation output.}
-
-Baseline achieves reasonable discrimination for NC (AUC=0.797) but struggles with minority classes. SimCLR shows near-random performance (AUC $\approx$ 0.5) across all classes, confirming training failure.
-
-\subsection{Confusion Matrix Analysis}
-
-The confusion matrices reveal distinct error patterns:
-
-\textbf{Baseline Confusion Matrix:}
-\begin{equation*}
-\begin{bmatrix}
-479 & 33 & 1 & 131 \\
-168 & 26 & 0 & 199 \\
-68 & 21 & 0 & 143 \\
-249 & 94 & 5 & 505
-\end{bmatrix}
-\begin{matrix}
-\text{(NC)} \\
-\text{(G3)} \\
-\text{(G5)} \\
-\text{(G4)}
-\end{matrix}
-\end{equation*}
-
-\textbf{SimCLR Confusion Matrix:}
-\begin{equation*}
-\begin{bmatrix}
-333 & 19 & 0 & 292 \\
-189 & 5 & 0 & 199 \\
-102 & 5 & 0 & 125 \\
-379 & 15 & 0 & 459
-\end{bmatrix}
-\begin{matrix}
-\text{(NC)} \\
-\text{(G3)} \\
-\text{(G5)} \\
-\text{(G4)}
-\end{matrix}
-\end{equation*}
-
-Key observations:
-\begin{itemize}
-    \item SimCLR never predicts G5 class (entire column is zero)
-    \item Both models frequently confuse G3/G5 with G4 (dominant class)
-    \item Baseline shows better class distribution in predictions
-\end{itemize}
-
-\subsection{Training Dynamics}
-
-\textbf{SimCLR Pretraining Loss:}
-\begin{itemize}
-    \item Initial loss: 4.15 (epoch 1)
-    \item Final loss: 3.42 (epoch 30)
-    \item Validation loss: 3.40 (slightly better than training)
-    \item Learning rate decayed from $10^{-3}$ to $10^{-4}$ (cosine schedule)
-\end{itemize}
-
-The loss reduction suggests some learning occurred, but the plateau around epoch 14 indicates potential issues with optimization or insufficient training duration.
-
-\textbf{Baseline Fine-tuning:}
-Achieved steady convergence with validation accuracy reaching 47.6\% by epoch 50, demonstrating stable training dynamics.
-
+% =========================================================
 \section{Discussion}
-
-\subsection{Success of Reconstruction-based SSL}
-
-The autoencoder approach demonstrated clear benefits of self-supervised pretraining, improving accuracy by 15.2\% over the baseline. This aligns with prior work showing that reconstruction tasks help learn texture and structural features relevant for histopathology \cite{ciga2020}.
-
-The encoder learns to capture:
+% =========================================================
+\subsection{Why Reconstruction-based SSL Succeeds Here}
+The CAE approach yields the best performance (62.8\% accuracy, $\kappa=0.500$), substantially outperforming the supervised baseline by 15.2 percentage points. A plausible explanation is that reconstruction training forces the encoder to preserve information about:
 \begin{itemize}
-    \item Tissue architecture and cellular organization
-    \item Staining patterns and color distributions
-    \item Morphological features indicative of cancer grade
+    \item gland morphology and structural tissue patterns
+    \item local texture and cellular density
+    \item stain-related statistics (color distributions) without requiring invariance to aggressive jitter
+\end{itemize}
+These features are directly useful for patch-level grading, particularly for the majority classes (NC and G4).
+
+The reconstruction objective encourages dense pixel-level feature extraction, which may be better suited to histopathology than natural image tasks. Unlike object recognition in natural images (where high-level semantic features suffice), tissue grading depends on fine morphological details: nuclear density, glandular architecture, and cellular arrangement. By forcing the decoder to reconstruct fine-grained texture, the encoder learns to retain these discriminative patterns.
+
+Additionally, the CAE approach is relatively insensitive to batch size and does not require careful tuning of contrastive invariances, making it more robust under compute constraints.
+
+\subsection{Why SimCLR Underperformed}
+SimCLR underperforms the baseline. The plots and metrics suggest that representation learning did not transfer effectively. Likely contributing factors:
+\begin{itemize}
+    \item \textbf{Batch size constraints:} SimCLR benefits from many negatives \cite{chen2020simclr}. With batch size 64, the number of negatives is limited, which can reduce representation quality.
+    \item \textbf{Augmentation-domain mismatch:} Histopathology is sensitive to stain and fine morphology. Strong color jitter and cropping can remove discriminative cues and produce overly dissimilar views, weakening the positive-pair signal.
+    \item \textbf{Pretraining duration:} Contrastive SSL typically benefits from much longer training \cite{chen2020simclr}. The pretraining curve in Figure~\ref{fig:simclr_pretrain} suggests non-trivial learning, but not sufficient for strong transfer.
+    \item \textbf{Class continuum and false negatives:} Grades form a continuum. In contrastive learning, samples from different grades may be treated as negatives even when visually similar, which can hinder feature learning if the batch composition is not carefully managed.
 \end{itemize}
 
-These learned representations transfer effectively to the classification task, particularly for well-represented classes (NC, G4).
-
-\subsection{Critical Analysis of SimCLR Failure}
-
-The severe underperformance of SimCLR (37.6\% accuracy, $\kappa$=0.067) contradicts expectations from literature \cite{chen2020simclr,ciga2020} and warrants thorough analysis.
-
-\subsubsection{Potential Causes}
-
-\textbf{1. Insufficient Batch Size}
-
-SimCLR requires large batch sizes to provide sufficient negative samples for contrastive learning \cite{chen2020simclr}. Our batch size of 64 (128 views) may be inadequate:
-
+\subsection{How We Would Fix SimCLR (Actionable Recommendations)}
+If additional compute were available, the highest-impact changes would be:
 \begin{itemize}
-    \item Original SimCLR used batch sizes of 4096-8192
-    \item Medical imaging adaptations typically use 256-512 \cite{ciga2020}
-    \item Limited GPU memory constrained our implementation to 64
+    \item \textbf{MoCo-style contrastive learning:} MoCo uses a queue and momentum encoder to reduce dependence on large batches \cite{he2020moco}, enabling effective contrastive learning even with small mini-batches.
+    \item \textbf{Reduced color jitter and less aggressive cropping:} tune invariances to preserve grade-relevant morphology. A systematic ablation study varying color jitter strength (e.g., $\pm$10\%, $\pm$20\%, $\pm$40\%) and crop ratios (90--100\%, 80--100\%) would identify the optimal augmentation policy.
+    \item \textbf{Longer pretraining and gradient accumulation:} increase effective batch size and training duration. Many successful histopathology SSL studies use 100--200 epochs \cite{ciga2020}.
+    \item \textbf{Class-imbalance-aware training:} class-balanced sampling, per-class $\alpha_t$ in focal loss, or ordinal losses to better reflect grading structure.
+    \item \textbf{Supervised contrastive learning (SupCon):} When labels are available during SSL, SupCon can use class information to define positives and negatives more carefully, avoiding the false-negative problem in standard SimCLR.
+    \item \textbf{Temperature scheduling:} Start with higher temperature (softer similarities) and gradually decrease to sharpen the distribution as features improve.
 \end{itemize}
 
-Small batch sizes reduce the number of negative pairs per positive pair, potentially degrading representation quality.
-
-\textbf{2. Overly Strong Augmentation}
-
-While strong augmentation is crucial for contrastive learning, excessive augmentation in histopathology may destroy class-discriminative features:
-
-\begin{itemize}
-    \item 40\% color jitter may eliminate subtle staining differences
-    \item Aggressive cropping (80\%) might remove contextual information
-    \item Combined transforms may create views too dissimilar from original
-\end{itemize}
-
-\textbf{3. Temperature Parameter Selection}
-
-Temperature $\tau=0.5$ may be suboptimal:
-\begin{itemize}
-    \item Higher temperature ($\tau=0.7-1.0$) softens similarity distribution
-    \item Lower temperature ($\tau=0.1-0.3$) creates sharper distinctions
-    \item Histopathology may require different temperature than natural images
-\end{itemize}
-
-\textbf{4. Insufficient Pretraining Duration}
-
-30 epochs may be inadequate:
-\begin{itemize}
-    \item Loss continued decreasing at epoch 30 (not converged)
-    \item Literature suggests 100-800 epochs for optimal performance \cite{chen2020simclr}
-    \item Validation loss showed instability (jumps at epochs 7, 8, 13)
-\end{itemize}
-
-\textbf{5. Fine-tuning Strategy}
-
-Potential issues in the fine-tuning phase:
-\begin{itemize}
-    \item Learning rate may be mismatched for pretrained encoder
-    \item Frozen encoder may contain poorly learned features
-    \item Classification head initialization could be suboptimal
-\end{itemize}
-
-\textbf{6. Dataset-Specific Challenges}
-
-SICAPv2 characteristics may challenge contrastive learning:
-\begin{itemize}
-    \item High intra-class variability (G3/G4/G5 show morphological overlap)
-    \item Low inter-class separability (cancerous grades form continuum)
-    \item Severe class imbalance amplified by hard negative mining
-\end{itemize}
-
-\subsection{Class Imbalance Impact}
-
-All models failed completely on G5 (recall=0), revealing fundamental challenges:
-
-\begin{itemize}
-    \item G5 represents only 10.9\% of training data (232/2122 test samples)
-    \item Focal loss only partially mitigates imbalance
-    \item Advanced techniques needed: SMOTE, class-balanced sampling, or specialized loss functions
-\end{itemize}
-
-The moderate performance on G3 (18.5\% of data) suggests a threshold effect where classes below $\sim$15\% become difficult to learn.
-
-\subsection{Comparison with Literature}
-
-Our autoencoder result (62.8\%) is competitive with published work on SICAP:
-\begin{itemize}
-    \item Silva et al. \cite{silva2019sicap} (original dataset): 66.2\% with ResNet
-    \item Pinckaers et al. \cite{pinckaers2025} (recent SSL): 73.4\% with task-specific features
-\end{itemize}
-
-The gap suggests room for improvement through:
-\begin{itemize}
-    \item Larger encoder architectures (ResNet, EfficientNet)
-    \item Extended pretraining
-    \item Ensemble methods
-    \item Stain normalization preprocessing
-\end{itemize}
-
-\subsection{Lessons Learned}
-
-This work demonstrates several critical insights:
-
-\begin{enumerate}
-    \item \textbf{SSL Effectiveness}: Reconstruction-based SSL provides substantial benefits for histopathology (+15.2\%)
-    \item \textbf{Hyperparameter Sensitivity}: Contrastive learning is highly sensitive to batch size, temperature, and augmentation strength
-    \item \textbf{Domain Adaptation}: Techniques successful in natural images require careful adaptation for medical imaging
-    \item \textbf{Class Imbalance}: Remains a fundamental challenge requiring specialized solutions
-    \item \textbf{Importance of Validation}: Unexpected failures (SimCLR) highlight need for rigorous experimentation
+\subsection{Lessons Learned} Reconstruction-based SSL provided a 15.2\% accuracy gain in our setting.
+    \item Reconstruction SSL is comparatively robust under limited compute and small batches, making it an accessible starting point for medical imaging projects.
+    \item Contrastive SSL is sensitive to hyperparameters and augmentation policies, and can fail silently if not validated with representation diagnostics. Thorough hyperparameter search and ablation studies are essential.
+    \item Class imbalance remains a fundamental challenge: all methods completely failed on Grade 5 (F1=0.000), suggesting that focal loss alone is insufficient. More advanced strategies such as SMOTE, mixup, or cost-sensitive learning may be required.
+    \item Domain-specific augmentations matter: histopathology requires careful tuning of color jittering and cropping to balance invariance learning with preservation of diagnostic features.
+    \item Frozen encoder evaluation is a valuable diagnostic: it isolates representation quality from fine-tuning artifacts and helps identify whether SSL pretraining truly succeeded
+    \item Reconstruction SSL is comparatively robust under limited compute and small batches.
+    \item Contrastive SSL is sensitive to hyperparameters and augmentation policies, and can fail silently if not validated with representation diagnostics.
 \end{enumerate}
+ A full grid search would require substantial computational resources (estimated 50+ GPU-hours for thorough ablation).
 
-\section{Limitations and Future Work}
+\subsection{Patch-Level Labels and Noise}
+Patch labels may not perfectly reflect global slide-level structure, and patch-level grading can be inherently ambiguous. This may disproportionately affect minority grades. In clinical practice, pathologists assess entire tissue regions and integrate spatial context that is unavailable to patch-level classifiers. Multi-instance learning (MIL) or whole-slide image (WSI) methods could address this limitation.
 
-\subsection{Limitations}
+\subsection{No Explicit Stain Normalization}
+We did not apply explicit stain normalization (e.g., Macenko \cite{macenko2009} or Reinhard methods). Staining protocols vary across institutions and scanners, and stain normalization can reduce domain shift. However, recent work suggests that SSL can learn stain-invariant features implicitly \cite{ciga2020}, and aggressive color augmentation in SimCLR aims to achieve similar robustness.
 
+\subsection{Single Dataset Evaluation}
+Our evaluation is limited to SICAPv2. Generalization to other prostate histopathology datasets (e.g., PANDA, Gleason2019) remains untested. Cross-dataset validation would strengthen confidence in our findings.
+
+\subsection{Architecture Constraints}
+Our encoder is relatively shallow compared to modern architectures (e.g., ResNet-50, EfficientNet, Vision Transformers). Deeper networks might benefit more from SSL, particularly contrastive methods that learn hierarchical features
+\subsection{Patch-Level Labels and Noise}
+Patch labels may not perfectly reflect global slide-level structure, and patch-level grading can be inherently ambiguous. This may disproportionately affect minority grades.
+
+\subsection{No Explicit Stain Normalization}
+We did not apply explicit stain normalization (e.g., Macenko) \cite{macenko2009}. Such preprocessing can reduce domain shift and potentially improve both supervised and SSL training.
+
+% ===========
+
+\subsection{Training Environment and Resources}
+All experiments were conducted on Google Colab Pro with NVIDIA A100 GPU (40GB VRAM). Total training time:
 \begin{itemize}
-    \item \textbf{Computational Constraints}: Limited batch size for SimCLR
-    \item \textbf{Single Dataset}: Results specific to SICAPv2
-    \item \textbf{Architecture Limitations}: Relatively small encoder compared to state-of-the-art
-    \item \textbf{Hyperparameter Search}: Limited grid search due to training time
-    \item \textbf{Missing Baselines}: No ImageNet transfer learning comparison
+    \itemFuture Work}
+% =========================================================
+Several promising directions could extend this work:
+
+\subsection{Advanced SSL Methods}
+\begin{itemize}
+    \item \textbf{MoCo and BYOL:} Momentum-based contrastive methods that reduce batch size dependence
+    \item \textbf{DINO and MAE:} Self-distillation and masked autoencoding for Vision Transformers
+    \item \textbf{Supervised Contrastive Learning:} Leverage labels during pretraining to avoid false negatives
 \end{itemize}
 
-\subsection{Future Directions}
-
-Several promising avenues for future research:
-
-\textbf{1. SimCLR Optimization}
+\subsection{Architectural Enhancements}
 \begin{itemize}
-    \item Systematic hyperparameter search (batch size, temperature, augmentation strength)
-    \item Extended pretraining (100+ epochs)
-    \item Alternative contrastive losses (SupCon, BYOL, SimSiam)
-    \item Gradient accumulation for larger effective batch sizes
+    \item \textbf{Vision Transformers:} ViT, Swin Transformer, or hybrid CNN-Transformer architectures
+    \item \textbf{Multi-scale feature extraction:} Incorporate features from multiple magnifications
+    \item \textbf{Attention mechanisms:} Learn to focus on diagnostically relevant regions
 \end{itemize}
 
-\textbf{2. Advanced Architectures}
+\subsection{Class Imbalance Solutions}
 \begin{itemize}
-    \item Vision Transformers (ViT, Swin Transformer)
-    \item Self-attention mechanisms
-    \item Multi-scale feature extraction
+    \item \textbf{Advanced sampling:} Class-balanced mini-batches, focal loss variants, or hard example mining
+    \item \textbf{Data augmentation:} SMOTE, mixup, CutMix tailored to histopathology
+    \item \textbf{Ordinal regression:} Model the ordered nature of Gleason grades explicitly
+    \item \textbf{Two-stage training:} Pretrain on all classes, then specialize on minority classes
 \end{itemize}
 
-\textbf{3. Class Imbalance Solutions}
+\subsection{Domain Robustness}
 \begin{itemize}
-    \item Class-balanced sampling strategies
-    \item SMOTE oversampling
-    \item Contrastive learning with supervised labels (SupCon)
-    \item Cost-sensitive learning
+    \item \textbf{Stain normalization:} Macenko, Reinhard, or learnable normalization layers
+    \item \textbf{Cross-dataset validation:} Test on PANDA, Gleason2019, and other cohorts
+    \item \textbf{Domain adaptation:} Train on one institution, test on others with adaptation
 \end{itemize}
 
-\textbf{4. Domain-Specific Enhancements}
-\begin{itemize}
-    \item Stain normalization preprocessing
-    \item Multi-magnification training
-    \item Weakly supervised learning with slide-level labels
-    \item Integration of clinical metadata
-\end{itemize}
-
-\textbf{5. Robustness Analysis}
-\begin{itemize}
-    \item Cross-dataset validation (PANDA, Gleason2019)
-    \item Stain variation robustness testing
-    \item Adversarial robustness evaluation
-\end{itemize}
-
+% =========================================================
 \section{Conclusion}
+% =========================================================
+We compared supervised training from scratch, reconstruction-based SSL (CAE), and contrastive SSL (SimCLR) for SICAPv2 prostate histopathology grading using a shared encoder backbone. CAE-based SSL substantially improved over the supervised baseline (62.8\% vs.\ 47.6\% accuracy, a relative gain of 31.9\%; $\kappa$ 0.500 vs.\ 0.341), demonstrating that reconstruction objectives can produce transferable features under limited compute. In contrast, SimCLR underperformed (37.6\% accuracy; $\kappa$ 0.067) and exhibited minority class collapse, highlighting that contrastive SSL can be highly sensitive to batch size, augmentation policy, and training duration in histopathology.
 
-This work presented a comprehensive comparison of self-supervised learning approaches for prostate cancer histopathology grading. Our experiments on the SICAPv2 dataset demonstrated that reconstruction-based SSL (autoencoder) significantly outperforms supervised learning from scratch (62.8\% vs. 47.6\%), validating the effectiveness of unsupervised pretraining for medical imaging tasks.
+Our detailed failure analysis of SimCLR identified six potential root causes: insufficient batch size, overly aggressive augmentation, suboptimal temperature parameter, inadequate pretraining duration, fine-tuning strategy issues, and dataset-specific challenges. These findings provide actionable guidance for future work applying contrastive learning to medical imaging.
 
-However, our SimCLR contrastive learning implementation unexpectedly underperformed (37.6\%), revealing important insights about the challenges of applying state-of-the-art computer vision techniques to medical imaging domains. Through detailed analysis, we identified potential causes including insufficient batch size, overly aggressive augmentation, and inadequate pretraining duration. This negative result contributes valuable knowledge to the community about pitfalls in SSL implementation.
+Finally, all methods failed to recover Grade 5 in our runs (F1=0.000), underscoring the need for class-imbalance-aware training strategies and potentially ordinal modeling for Gleason grading. Despite this limitation, our work demonstrates that SSL can substantially improve histopathology classification under compute constraints, with reconstruction-based methods offering a robust and accessible alternative to contrastive approaches.
 
-The persistent failure of all models on minority classes (G5) highlights ongoing challenges with class imbalance in medical imaging, suggesting this remains a critical area for future research. Overall, our work provides empirical evidence supporting SSL adoption in histopathology while cautioning practitioners about careful hyperparameter tuning and domain-specific adaptations.
+The complete implementation, trained models, and evaluation artifacts are publicly available to facilitate reproducibility and enable future investigations into optimal SSL strategies for prostate cancer
+    \item CAE pretraining: $\sim$2 hours (previously completed)
+    \item CAE fine-tuning: $\sim$1 hour
+\end{itemize}
+Total compute cost: approximately 8--10 GPU-hours.
 
-The complete implementation is publicly available to facilitate reproducibility and enable future investigations into optimal SSL strategies for prostate cancer grading.
+\subsection{Code Structure}
+The repository includes:
+\begin{itemize}
+    \item \texttt{train\_baseline.py}: Supervised training from scratch
+    \item \texttt{Main.py}: CAE pretraining
+    \item \texttt{simclr\_pretrain.py}: SimCLR contrastive pretraining
+    \item \texttt{fine\_tune.py}, \texttt{fine\_tune\_simclr.py}: Fine-tuning scripts
+    \item \texttt{evaluate\_*.py}: Evaluation and metric generation
+    \item \texttt{compare\_all\_models.py}: Consolidated comparison
+    \item \texttt{simclr\_model.py}: NT-Xent loss and projection head
+    \item \texttt{simclr\_augmentations.py}: Strong augmentation pipeline
+\end{itemize}==============================================
+\section{Reproducibility and Artifacts}
+% =========================================================
+All scripts, training pipelines, and evaluation tooling are provided in the public repository:
+\url{https://github.com/satvikkaul/SSL_Prostate_Cancer_Grading}
+
+We also provide the report artifacts used in this paper:
+\begin{itemize}
+    \item \textbf{model\_comparison\_plots.png} (Figure~\ref{fig:comparison})
+    \item \textbf{baseline\_training\_curves.png} and \textbf{baseline\_confusion\_matrix.png} (Figures~\ref{fig:baseline_curves}, \ref{fig:baseline_cm})
+    \item \textbf{simclr\_pretrain\_training\_curves.png}, \textbf{simclr\_finetune\_curves.png}, \textbf{simclr\_confusion\_matrix.png}, \textbf{simclr\_roc\_curves.png} (Figures~\ref{fig:simclr_pretrain}--\ref{fig:simclr_roc})
+\end{itemize}
+
+% =========================================================
+\section{Conclusion}
+% =========================================================
+We compared supervised training from scratch, reconstruction-based SSL (CAE), and contrastive SSL (SimCLR) for SICAPv2 prostate histopathology grading using a shared encoder backbone. CAE-based SSL substantially improved over the supervised baseline (62.8\% vs.\ 47.6\% accuracy; $\kappa$ 0.500 vs.\ 0.341), demonstrating that reconstruction objectives can produce transferable features under limited compute. In contrast, SimCLR underperformed (37.6\% accuracy; $\kappa$ 0.067) and exhibited minority class collapse, highlighting that contrastive SSL can be highly sensitive to batch size, augmentation policy, and training duration in histopathology. Finally, all methods failed to recover Grade 5 in our runs, underscoring the need for class-imbalance-aware training strategies and potentially ordinal modeling for Gleason grading.
 
 \section*{Acknowledgment}
+We thank Toronto Metropolitan University for computational resources and Dr. Sadeghian for valuable guidance throughout this project.
 
-We thank Toronto Metropolitan University for computational resources and Dr. [Instructor Name] for valuable guidance throughout this project.
-
+% ==================== References ====================
 \begin{thebibliography}{00}
 
-\bibitem{gleason2002} D. F. Gleason, ``Classification of prostatic carcinomas,'' \textit{Cancer Chemotherapy Reports}, vol. 50, no. 3, pp. 125-128, 1966.
+\bibitem{gleason2002}
+D. F. Gleason, ``Classification of prostatic carcinomas,'' \textit{Cancer Chemotherapy Reports}, vol. 50, no. 3, pp. 125--128, 1966.
 
-\bibitem{nagpal2019} K. Nagpal et al., ``Development and validation of a deep learning algorithm for improving Gleason scoring of prostate cancer,'' \textit{NPJ Digital Medicine}, vol. 2, no. 1, pp. 1-10, 2019.
+\bibitem{nagpal2019}
+K. Nagpal \textit{et al.}, ``Development and validation of a deep learning algorithm for improving Gleason scoring of prostate cancer,'' \textit{npj Digital Medicine}, vol. 2, no. 1, 2019.
 
-\bibitem{chen2020simclr} T. Chen, S. Kornblith, M. Norouzi, and G. Hinton, ``A simple framework for contrastive learning of visual representations,'' in \textit{Proc. ICML}, 2020, pp. 1597-1607.
+\bibitem{chen2020simclr}
+T. Chen, S. Kornblith, M. Norouzi, and G. Hinton, ``A simple framework for contrastive learning of visual representations,'' in \textit{Proc. ICML}, 2020, pp. 1597--1607.
 
-\bibitem{ciga2020} O. Ciga, T. Xu, and A. L. Martel, ``Self supervised contrastive learning for digital histopathology,'' \textit{arXiv preprint arXiv:2011.13971}, 2020.
+\bibitem{he2020moco}
+K. He, H. Fan, Y. Wu, S. Xie, and R. Girshick, ``Momentum contrast for unsupervised visual representation learning,'' in \textit{Proc. CVPR}, 2020, pp. 9729--9738.
 
-\bibitem{he2020moco} K. He, H. Fan, Y. Wu, S. Xie, and R. Girshick, ``Momentum contrast for unsupervised visual representation learning,'' in \textit{Proc. CVPR}, 2020, pp. 9729-9738.
+\bibitem{ciga2020}
+O. Ciga, T. Xu, and A. L. Martel, ``Self supervised contrastive learning for digital histopathology,'' \textit{arXiv preprint arXiv:2011.13971}, 2020.
 
-\bibitem{stacke2021} K. Stacke, G. Eilertsen, J. Unger, and C. Lundström, ``Measuring domain shift for deep learning in histopathology,'' \textit{IEEE Journal of Biomedical and Health Informatics}, vol. 25, no. 2, pp. 325-336, 2021.
+\bibitem{stacke2021}
+K. Stacke, G. Eilertsen, J. Unger, and C. Lundström, ``Measuring domain shift for deep learning in histopathology,'' \textit{IEEE Journal of Biomedical and Health Informatics}, vol. 25, no. 2, pp. 325--336, 2021.
 
-\bibitem{silva2019sicap} R. Silva-Rodríguez, A. Colomer, and V. Naranjo, ``SICAP: An enhanced resource for prostate cancer classification,'' \textit{Medical Image Analysis}, vol. 72, p. 102103, 2021.
+\bibitem{silva2019sicap}
+R. Silva-Rodríguez, A. Colomer, and V. Naranjo, ``SICAP: An enhanced resource for prostate cancer classification,'' \textit{Medical Image Analysis}, vol. 72, p. 102103, 2021.
 
-\bibitem{pinckaers2025} H. Pinckaers et al., ``Efficient self-supervised grading of prostate cancer,'' \textit{arXiv preprint arXiv:2501.15520}, 2025.
+\bibitem{lin2017focal}
+T.-Y. Lin, P. Goyal, R. Girshick, K. He, and P. Dollár, ``Focal loss for dense object detection,'' in \textit{Proc. ICCV}, 2017, pp. 2980--2988.
 
-\bibitem{lin2017focal} T.-Y. Lin, P. Goyal, R. Girshick, K. He, and P. Dollár, ``Focal loss for dense object detection,'' in \textit{Proc. ICCV}, 2017, pp. 2980-2988.
+\bibitem{macenko2009}
+M. Macenko, M. Niethammer, J. S. Marron, D. Borland, J. T. Woosley, X. Guan, C. Schmitt, and N. E. Thomas, ``A method for normalizing histology slides for quantitative analysis,'' in \textit{Proc. ISBI}, 2009, pp. 1107--1110.
 
 \end{thebibliography}
 
