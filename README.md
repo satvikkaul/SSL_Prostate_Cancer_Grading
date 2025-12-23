@@ -1,6 +1,6 @@
 # Self-Supervised Learning for Prostate Cancer Grading (SICAPv2)
 
-**CP8321 Deep Learning - Final Project**  
+**Deep Learning - Final Project**  
 **Toronto Metropolitan University (Ryerson University)**
 
 This project implements and compares **three Self-Supervised Learning (SSL)** approaches for histopathological image analysis, specifically targeting prostate cancer Gleason grading using the **SICAPv2 dataset**.
@@ -11,7 +11,7 @@ The goal is to demonstrate how self-supervised pretraining improves deep learnin
 
 1. **Baseline (No SSL):** Classifier trained from scratch with random initialization
 2. **Autoencoder-SSL:** Reconstruction-based SSL using Convolutional Autoencoder
-3. **SimCLR-SSL:** Contrastive learning using SimCLR framework ✨ (Assignment Requirement)
+3. **SimCLR-SSL:** Contrastive learning using SimCLR framework 
 
 ### Key Information
 
@@ -19,31 +19,6 @@ The goal is to demonstrate how self-supervised pretraining improves deep learnin
 * **Task:** Gleason Grading (4-class classification: NC, G3, G4, G5)
 * **Methods:** Three SSL approaches + comprehensive comparison
 * **Image Size:** 128×128×3 RGB patches (following paper specification)
-
-## Literature Review & Motivation
-
-This project is grounded in recent advances in self-supervised learning for medical imaging:
-
-### Foundational Papers
-
-1. **Ciga, Xu & Martel (2020) - "Self-Supervised Contrastive Learning for Digital Histopathology"** [[arXiv]](https://arxiv.org/abs/2011.13971)
-   - **Key Finding:** Domain-specific SSL (trained on histopathology) outperforms ImageNet pretraining
-   - **Method:** SimCLR adapted for 57 histopathology datasets
-   - **Impact:** Established contrastive learning as state-of-the-art for histopathology
-
-2. **Stacke et al. (2021) - "Learning Representations with Contrastive Self-Supervised Learning for Histopathology"** [[arXiv]](https://arxiv.org/abs/2112.05760)
-   - **Key Finding:** Histopathology requires different augmentations than natural images
-   - **Critical Insight:** Color jittering essential due to stain variation
-   - **Our Implementation:** Strong color augmentation (±40% brightness/contrast/saturation)
-
-3. **Efficient Self-Supervised Grading of Prostate Cancer (2025)** [[arXiv]](https://arxiv.org/abs/2501.15520)
-   - **Dataset:** Uses SICAP (same as this project!) 🎯
-   - **Method:** Task-specific SSL with stain-agnostic features
-   - **Relevance:** Direct baseline for comparison
-
-4. **Kang et al. (2023) - "Benchmarking Self-Supervised Learning on Diverse Pathology Datasets"** [[arXiv]](https://arxiv.org/abs/2212.04690)
-   - **Finding:** Domain-aligned SSL consistently improves performance
-   - **Conclusion:** Medical imaging benefits more from task-specific SSL than general pretraining
 
 ### Our Approach
 
@@ -72,31 +47,30 @@ We implement and compare:
 │   └── models/                   # Autoencoder model results
 │
 ├── Main.py                       # Autoencoder SSL pretraining
-├── simclr_pretrain.py           # SimCLR SSL pretraining ⭐
+├── simclr_pretrain.py           # SimCLR SSL pretraining 
 ├── train_baseline.py            # Baseline training (no SSL)
 │
 ├── fine_tune.py                 # Autoencoder fine-tuning
-├── fine_tune_simclr.py          # SimCLR fine-tuning ⭐
+├── fine_tune_simclr.py          # SimCLR fine-tuning 
 │
 ├── evaluate_final.py            # Autoencoder evaluation
-├── evaluate_simclr.py           # SimCLR evaluation ⭐
-├── evaluate_baseline.py         # Baseline evaluation ⭐
-├── compare_all_models.py        # Comprehensive comparison ⭐
+├── evaluate_simclr.py           # SimCLR evaluation 
+├── evaluate_baseline.py         # Baseline evaluation 
+├── compare_all_models.py        # Comprehensive comparison 
 │
 ├── variational_autoencoder.py   # Encoder/Decoder architecture
-├── simclr_model.py              # SimCLR model + NT-Xent loss ⭐
-├── simclr_augmentations.py      # Strong augmentation pipeline ⭐
+├── simclr_model.py              # SimCLR model + NT-Xent loss 
+├── simclr_augmentations.py      # Strong augmentation pipeline 
 │
 ├── my_data_generator.py         # Custom data generator
 ├── data_augmentation.py         # Augmentation utilities
 ├── setup_data.py                # Dataset preprocessing
 ├── utils_*.py                   # Helper functions
 │
-├── GPU_TRAINING_GUIDE.md        # Instructions for GPU training ⭐
+├── GPU_TRAINING_GUIDE.md        # Instructions for GPU training 
 ├── Model_architecture.md        # Detailed architecture docs
 └── notes.md                     # Experiment log
 
-⭐ = New files for this project
 ```
 
 ## Setup Instructions
@@ -189,7 +163,7 @@ python fine_tune.py
 
 ---
 
-### **Approach 3: SimCLR-SSL (Contrastive Learning)** ⭐ **RECOMMENDED**
+### **Approach 3: SimCLR-SSL (Contrastive Learning)** 
 
 #### Step 1: SimCLR Pretraining
 Train encoder using contrastive learning (unsupervised):
@@ -289,19 +263,6 @@ python compare_all_models.py
 | **G4 (Gleason 4)** | 0.54 | 0.65 | 0.59 | 1042 |
 | **G5 (Gleason 5)** | 0.00 | 0.00 | 0.00 | 247 |
 
-**Key Observations:**
-- ✅ Strong performance on majority class (NC: 85% recall)
-- ⚠️ Moderate performance on G4 (65% recall)
-- ❌ Poor performance on minority classes (G3: 13%, G5: 0%)
-- 📊 Class imbalance is the primary challenge
-
-### Expected Improvements with SimCLR
-
-Based on literature (Ciga et al., 2020; Kang et al., 2023):
-- **Overall Accuracy:** Expected +5-10% over Autoencoder
-- **Minority Classes:** Expected +10-15% recall for G3/G5
-- **Reason:** Contrastive learning forces discriminative features, while reconstruction focuses on texture similarity
-
 ---
 
 ## Methodology & Architecture
@@ -310,9 +271,9 @@ Based on literature (Ciga et al., 2020; Kang et al., 2023):
 
 1. **Baseline (No SSL):** Demonstrates the value of pretraining
 2. **Autoencoder:** Reconstruction-based SSL (learns texture/structure)
-3. **SimCLR:** Contrastive SSL (learns discriminative features) - **Assignment Requirement**
+3. **SimCLR:** Contrastive SSL (learns discriminative features) - 
 
-### SimCLR Framework (Our Implementation)
+### SimCLR Framework
 
 ```
 Input Image (128×128×3)
@@ -338,13 +299,11 @@ Input Image (128×128×3)
 
 ### Augmentation Pipeline (Critical for Histopathology)
 
-Following Stacke et al. (2021) recommendations:
-
 **Strong Augmentations:**
-- ✓ Color jittering (±40% brightness/contrast/saturation, ±10% hue)
-- ✓ Random crops (80-100% of image)
-- ✓ Geometric transforms (flips, 90° rotations)
-- ✓ Gaussian blur (50% probability)
+- Color jittering (±40% brightness/contrast/saturation, ±10% hue)
+- Random crops (80-100% of image)
+- Geometric transforms (flips, 90° rotations)
+- Gaussian blur (50% probability)
 
 **Why so strong?**
 - Histopathology has high stain variation
@@ -405,64 +364,6 @@ Output: [NC, G3, G5, G4] probabilities
 
 ---
 
-## Methodological Note
-
-### Assignment Requirement: Contrastive Learning
-
-**Assignment Specification:**
-> "Implement SSL techniques like contrastive learning (SimCLR, MoCo)..."
-
-**Our Implementation:**
-✅ **Primary Method:** SimCLR (full implementation in `simclr_*.py`)  
-✅ **Comparison:** Baseline and Autoencoder for comprehensive study  
-✅ **Literature-Grounded:** Based on Ciga et al. (2020) and Stacke et al. (2021)  
-
-**Autoencoder vs. SimCLR:**
-- **Autoencoder:** Learns to reconstruct images → good for texture/structure
-- **SimCLR:** Learns discriminative features → better for classification
-- **Expectation:** SimCLR will outperform Autoencoder (validated in literature)
-
-This comprehensive comparison strengthens the project by showing:
-1. SSL improves over baseline (demonstrates pretraining value)
-2. Contrastive SSL > Reconstruction SSL (validates assignment focus)
-
----
-
-## References
-
-1. Ciga, O., Xu, T., & Martel, A. L. (2020). Self-supervised contrastive learning for digital histopathology. *arXiv preprint arXiv:2011.13971*. https://arxiv.org/abs/2011.13971
-
-2. Stacke, K., Unger, J., Lundström, C., & Eilertsen, G. (2021). Learning representations with contrastive self-supervised learning for histopathology applications. *arXiv preprint arXiv:2112.05760*. https://arxiv.org/abs/2112.05760
-
-3. Kang, M., Song, H., Park, S., Yoo, D., & Pereira, S. (2023). Benchmarking self-supervised learning on diverse pathology datasets. *arXiv preprint arXiv:2212.04690*. https://arxiv.org/abs/2212.04690
-
-4. Efficient self-supervised grading of prostate cancer pathology. (2025). *arXiv preprint arXiv:2501.15520*. https://arxiv.org/abs/2501.15520
-
-5. Silva-Rodríguez, J., Colomer, A., Sales, M. A., Molina, R., & Naranjo, V. (2020). Going deeper through the Gleason scoring scale: An automatic end-to-end system for histology prostate grading and cribriform pattern detection. *Computer Methods and Programs in Biomedicine*, 195, 105637.
-
----
-
-## Project Team
-
-**Authors:**
-- Parsa Ranjbaran (Student ID: 501037874)
-- Abdur Qadeer (Student ID: 500967819)
-- Satvik Kaul (Student ID: 501312329)
-
-**Course:** CP8321 Deep Learning  
-**Institution:** Toronto Metropolitan University (Ryerson University)  
-**Term:** Fall 2025
-
----
-
 ## License
 
 This project is for educational purposes as part of CP8321 Deep Learning course requirements.
-
----
-
-## Acknowledgments
-
-- SICAPv2 Dataset creators for providing high-quality annotated histopathology images
-- TensorFlow and Keras teams for excellent deep learning frameworks
-- Research community for pioneering work in self-supervised learning for medical imaging
