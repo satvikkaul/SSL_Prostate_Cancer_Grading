@@ -13,6 +13,10 @@ Output:
 """
 
 import os
+import sys
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 import tensorflow as tf
@@ -21,8 +25,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.utils import class_weight
 
-from variational_autoencoder import ConvVarAutoencoder
-from my_data_generator import DataGenerator, create_tf_dataset
+from models.cae_model import ConvVarAutoencoder
+from data.generator import DataGenerator, create_tf_dataset
 from tensorflow.keras.layers import Dense, Dropout, GlobalMaxPooling2D
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import SGD, Adam

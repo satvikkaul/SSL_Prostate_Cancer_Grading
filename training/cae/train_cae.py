@@ -1,12 +1,16 @@
 #%% GPU
 import os
+import sys
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 #%% Libraries
 import tensorflow as tf
 import pandas as pd
-from my_data_generator import DataGenerator
-from variational_autoencoder import ConvVarAutoencoder
-from utils_image_retrieval import save_reconstructed_images, create_environment, create_json
+from data.generator import DataGenerator
+from models.cae_model import ConvVarAutoencoder
+from utils.utils_retrieval import save_reconstructed_images, create_environment, create_json
 import os
 import numpy as np
 import cv2

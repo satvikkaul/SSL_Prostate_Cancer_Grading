@@ -52,7 +52,7 @@
 
 ### Architecture Dimensions
 
-**SSL Pretraining (Main.py):**
+**SSL Pretraining (training/cae/train_cae.py):**
 ```
 Input: 128×128×3 RGB image
 
@@ -82,7 +82,7 @@ Decoder:
 Output: 128×128×3 reconstructed image
 ```
 
-**Classification Head (fine_tune.py):**
+**Classification Head (training/cae/finetune_cae.py):**
 ```
 Encoder output: 4×4×128 (from dropout_7 layer)
   ↓
@@ -97,7 +97,7 @@ Dense(4, Softmax) → [NC, G3, G5, G4] probabilities
 
 ## File Structure & Responsibilities
 
-### 1. **Main.py** - SSL Pretraining Orchestrator
+### 1. **training/cae/train_cae.py** - SSL Pretraining Orchestrator
 
 **Purpose:** Trains the Convolutional Autoencoder (CAE) on unlabeled images to learn feature representations through reconstruction.
 
@@ -135,7 +135,7 @@ bottle_conv_filters = [128, 64, 128]  # Removed problematic 1-filter layer
 
 ---
 
-### 2. **variational_autoencoder.py** - Model Architecture Definition
+### 2. **models/cae_model.py** - Model Architecture Definition
 
 **Purpose:** Defines the Convolutional Autoencoder (CAE) architecture with encoder, bottleneck, and decoder components.
 
@@ -204,7 +204,7 @@ Despite the filename, this is a standard autoencoder using MSE loss, not variati
 
 ---
 
-### 3. **fine_tune.py** - Downstream Classification Pipeline
+### 3. **training/cae/finetune_cae.py** - Downstream Classification Pipeline
 
 **Purpose:** Loads pretrained encoder, adds classification head, and trains on labeled data for Gleason grading.
 
@@ -266,7 +266,7 @@ def focal_loss(alpha=0.5, gamma=2.0):
 
 ---
 
-### 4. **evaluate_final.py** - Model Evaluation Script
+### 4. **evaluation/cae/eval_cae.py** - Model Evaluation Script
 
 **Purpose:** Loads the best trained model and generates classification metrics on the test set.
 
@@ -303,7 +303,7 @@ confusion_matrix(y_true, y_pred)       # Misclassification patterns
 
 ---
 
-### 5. **setup_data.py** - Data Preparation Script
+### 5. **data/setup.py** - Data Preparation Script
 
 **Purpose:** Converts raw SICAPv2 Excel partition files into clean CSV files for TensorFlow data generators.
 
@@ -346,7 +346,7 @@ assert all(col in df.columns for col in required_cols)
 
 ---
 
-### 6. **my_data_generator.py** - Custom Data Generator
+### 6. **data/generator.py** - Custom Data Generator
 
 **Purpose:** Implements custom TensorFlow data pipeline with on-the-fly data augmentation and efficient loading.
 
@@ -419,9 +419,9 @@ def create_tf_dataset(generator):
 
 ---
 
-### 7. **utils_huleo.py** & **utils_image_retrieval.py** - Helper Functions
+### 7. **utils/utils_common.py** & **utils/utils_retrieval.py** - Helper Functions
 
-**utils_huleo.py:**
+**utils/utils_common.py:**
 - `get_random_patch_list()`: Generates random patches for hide-and-seek augmentation
 - `random_hide()`: Implements hide-and-seek (occlusion) augmentation
 - `image_histogram_equalization()`: Normalizes image intensities
@@ -441,7 +441,7 @@ def create_tf_dataset(generator):
 
 **Objective:** Learn meaningful feature representations by reconstructing input images.
 
-**Training Loop (Main.py):**
+**Training Loop (training/cae/train_cae.py):**
 
 ```python
 # 1. Initialize model
@@ -658,7 +658,7 @@ weights = weights - lr * clipped_gradient
     Clean CSV Files (Train.csv, Test.csv)
 
 ┌─────────────────────────────────────────────────────────────────┐
-│                    SSL PRETRAINING (Main.py)                     │
+│                    SSL PRETRAINING (training/cae/train_cae.py)     │
 └─────────────────────────────────────────────────────────────────┘
     Train.csv + images/
               ↓
@@ -671,7 +671,7 @@ weights = weights - lr * clipped_gradient
     Encoder Weights: exp_XXXX/VAE.weights.h5
 
 ┌─────────────────────────────────────────────────────────────────┐
-│              DOWNSTREAM CLASSIFICATION (fine_tune.py)            │
+│              DOWNSTREAM CLASSIFICATION (training/cae/finetune_cae.py)            │
 └─────────────────────────────────────────────────────────────────┘
     Train.csv + Test.csv + images/ + VAE.weights.h5
               ↓
@@ -688,7 +688,7 @@ weights = weights - lr * clipped_gradient
     Best Model: best_model_stage1.keras
 
 ┌─────────────────────────────────────────────────────────────────┐
-│                 EVALUATION (evaluate_final.py)                   │
+│                 EVALUATION (evaluation/cae/eval_cae.py)                   │
 └─────────────────────────────────────────────────────────────────┘
     Test.csv + images/ + best_model_stage1.keras
               ↓
@@ -747,7 +747,7 @@ Label batch shape:  (8, 4)              # One-hot encoded classes
 **U-Net style skip connection at encoder layer 2:**
 
 ```python
-# Encoder (line 91-92 in variational_autoencoder.py)
+# Encoder (line 91-92 in models/cae_model.py)
 if i == 2:
     conv_layeri = x  # Save 16×16×64 feature map
 
@@ -763,7 +763,7 @@ if i == 1:
 **CRITICAL: Normalize BEFORE augmentation**
 
 ```python
-# CORRECT (my_data_generator.py line 141)
+# CORRECT (data/generator.py line 141)
 img = img / 255.0  # Normalize to [0, 1]
 if data_augmentation:
     img = rotateit(img, theta)  # Augment on normalized image

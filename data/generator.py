@@ -7,12 +7,12 @@ import os
 import tensorflow as tf
 
 import cv2
-from data_augmentation import translateit_fast_2d as translateit_fast
-from data_augmentation import scaleit_2d as scaleit
-from data_augmentation import rotateit_2d as rotateit
-from data_augmentation import intensifyit_2d as intensifyit
+from data.augmentations.transformations import translateit_fast_2d as translateit_fast
+from data.augmentations.transformations import scaleit_2d as scaleit
+from data.augmentations.transformations import rotateit_2d as rotateit
+from data.augmentations.transformations import intensifyit_2d as intensifyit
 from sklearn.utils.class_weight import compute_class_weight
-from utils_huleo import get_random_patch_list, random_hide, image_histogram_equalization, hist_match
+from utils.utils_common import get_random_patch_list, random_hide, image_histogram_equalization, hist_match
 
 ####################################################
 #classes

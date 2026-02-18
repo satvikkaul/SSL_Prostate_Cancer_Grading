@@ -18,6 +18,10 @@ Output:
 """
 
 import os
+import sys
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Change to your GPU ID
 
 import tensorflow as tf
@@ -26,10 +30,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-from variational_autoencoder import ConvVarAutoencoder
-from simclr_model import SimCLRModel, SimCLRTrainer
-from simclr_augmentations import SimCLRAugmentation, create_simclr_augmentation_pair
-from my_data_generator import DataGenerator
+from models.cae_model import ConvVarAutoencoder
+from models.simclr_model import SimCLRModel, SimCLRTrainer
+from data.augmentations.aug_simclr import SimCLRAugmentation, create_simclr_augmentation_pair
+from data.generator import DataGenerator
 
 # ============================================================================
 # CONFIGURATION

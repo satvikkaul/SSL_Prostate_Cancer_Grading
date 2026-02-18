@@ -13,6 +13,10 @@ Output:
 """
 
 import os
+import sys
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+
 import pandas as pd
 import numpy as np
 import tensorflow as tf
@@ -20,7 +24,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, roc_curve, cohen_kappa_score
 
-from my_data_generator import DataGenerator, create_tf_dataset
+from data.generator import DataGenerator, create_tf_dataset
 
 # Configuration
 DATASET_DIR = './dataset'

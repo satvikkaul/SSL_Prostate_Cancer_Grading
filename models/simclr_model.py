@@ -48,7 +48,7 @@ class SimCLRModel(tf.keras.Model):
     def __init__(self, encoder, projection_hidden_dim=256, projection_output_dim=128):
         """
         Args:
-            encoder: Base encoder network (from variational_autoencoder.py)
+            encoder: Base encoder network (from models.cae_model)
             projection_hidden_dim: Hidden dimension of projection head
             projection_output_dim: Output dimension of projection head (embedding size)
         """

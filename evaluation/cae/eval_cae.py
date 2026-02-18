@@ -1,7 +1,11 @@
 import pandas as pd
 import numpy as np
+import sys
+import os
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 import tensorflow as tf
-from my_data_generator import DataGenerator, create_tf_dataset
+from data.generator import DataGenerator, create_tf_dataset
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns

@@ -1,12 +1,16 @@
 import pandas as pd
 import numpy as np
 import os
+import sys
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+
 import tensorflow as tf
-from my_data_generator import DataGenerator, create_tf_dataset
+from data.generator import DataGenerator, create_tf_dataset
 from tensorflow.keras.layers import Dense, Dropout # type: ignore
 from tensorflow.keras.models import Model # type: ignore
 from tensorflow.keras.optimizers import SGD, Adam # type: ignore
-from variational_autoencoder import ConvVarAutoencoder
+from models.cae_model import ConvVarAutoencoder
 from sklearn.utils import class_weight
 import matplotlib.pyplot as plt
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau # type: ignore

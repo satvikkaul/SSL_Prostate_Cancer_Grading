@@ -17,7 +17,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras import backend as K
 from tensorflow.keras.callbacks import EarlyStopping
-from utils_image_retrieval import learning_curve_plot
+from utils.utils_retrieval import learning_curve_plot
 import numpy as np
 import os
 import pickle
