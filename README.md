@@ -27,12 +27,12 @@ We implement and compare:
 - **Contrastive SSL** (SimCLR): Learns discriminative features via positive/negative pairs
 - **Baseline**: No pretraining (demonstrates SSL benefit)
 
-**Hypothesis:** Contrastive learning will outperform reconstruction-based SSL for classification tasks, as predicted by recent literature.
-
----
-
+## Documentation
+- [Autoencoder architecture (model_cae.md)](docs/model_cae.md)
+- [SimCLR architecture (model_simclr.md)](docs/model_simclr.md)
+  
 ## Project Structure
-
+```
 .
 ├── data/                         # Data loading & augmentation
 │   ├── generator.py              # Shared data generator
@@ -61,11 +61,13 @@ We implement and compare:
 │   └── utils_retrieval.py
 │
 ├── docs/                         # Documentation
-│   ├── [model_cae.md](docs/model_cae.md)       # Autoencoder Architecture
-│   └── [model_simclr.md](docs/model_simclr.md) # SimCLR Architecture
+│   ├── model_cae.md              # Autoencoder Architecture
+│   └── model_simclr.md           # SimCLR Architecture
 │
 ├── output/                       # Training outputs
 └── dataset/                      # Dataset folder
+```
+
 
 ## Setup Instructions
 
@@ -340,23 +342,6 @@ Output: [NC, G3, G5, G4] probabilities
 - Optimizer: SGD with momentum=0.9, clipnorm=1.0
 - Learning Rate: 1e-5 (stage 1), 5e-5 (stage 2)
 
-### Class Imbalance Handling
-
-**Challenge:** Dataset is heavily imbalanced
-- NC: 49% (majority)
-- G4: 30%
-- G3: 14%
-- G5: 7% (minority)
-
-**Solutions Implemented:**
-1. **Focal Loss:** Down-weights easy examples, focuses on hard cases
-2. **Data Augmentation:** Increases effective training samples
-3. **Gradient Clipping:** Prevents training instability
-
-**Not Used:** Class weights (caused training collapse in experiments)
-
 ---
 
 ## License
-
-This project is for educational purposes as part of CP8321 Deep Learning course requirements.
