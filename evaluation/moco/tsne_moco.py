@@ -193,7 +193,7 @@ def main():
     print(f"Running t-SNE (perplexity={args.perplexity})...")
     tsne = TSNE(n_components=2, perplexity=args.perplexity, 
                 learning_rate='auto', init='pca',
-                random_state=42, n_iter=1000)
+                random_state=42)
     embeddings_2d = tsne.fit_transform(features)
     print("t-SNE complete.")
     
