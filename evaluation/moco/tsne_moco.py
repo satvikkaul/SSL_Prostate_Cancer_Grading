@@ -167,6 +167,10 @@ def main():
     
     # ── Load manifest ─────────────────────────────────────────────────────────
     manifest = pd.read_csv(MANIFEST_PATH)
+    # Fix absolute paths for cross-OS compatibility (e.g Windows to Colab Linux)
+    manifest['image_path'] = manifest['image_path'].apply(
+        lambda p: os.path.join('.', 'dataset', p.replace('\\', '/').split('/dataset/')[-1])
+    )
     print(f"Manifest loaded: {len(manifest)} total images")
     
     # Sample up to n_samples
