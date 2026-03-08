@@ -253,3 +253,77 @@ def create_tf_dataset(generator):
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     
     return dataset
+
+
+####################################################
+# MoCo v2 Dual-View Data Generator
+####################################################
+
+class MoCoDataGenerator(tf.keras.utils.Sequence):
+    """
+    Data generator for MoCo v2 self-supervised pre-training.
+    
+    Returns two independently augmented views (x_q, x_k) of the same
+    image patch per batch. No labels are produced.
+    
+    Augmentation pipeline (MoCo v2 standard):
+      1. Random Crop + Resize to (H, W)
+      2. Random Horizontal Flip (p=0.5)
+      3. Random Color Jitter (brightness, contrast, saturation, hue)
+      4. Random Grayscale conversion (p=0.2)
+      5. Gaussian Blur (σ ∈ [0.1, 2.0])
+    
+    Args:
+        manifest_df: DataFrame with column 'image_path' (absolute paths).
+        image_size: (H, W) tuple. Default (128, 128).
+        batch_size: Number of samples per batch.
+        shuffle: Whether to shuffle after each epoch.
+    """
+    
+    def __init__(self, manifest_df, image_size=(128, 128), batch_size=16, shuffle=True):
+        super().__init__()
+        self.paths = manifest_df['image_path'].values
+        self.image_size = image_size
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.indexes = np.arange(len(self.paths))
+        if self.shuffle:
+            np.random.shuffle(self.indexes)
+    
+    def __len__(self):
+        return int(np.ceil(len(self.indexes) / self.batch_size))
+    
+    def on_epoch_end(self):
+        if self.shuffle:
+            np.random.shuffle(self.indexes)
+    
+    def __getitem__(self, batch_idx):
+        idxs = self.indexes[batch_idx * self.batch_size:(batch_idx + 1) * self.batch_size]
+        batch_images = []
+        for idx in idxs:
+            img = self.get_sample(idx)
+            if img is not None:
+                batch_images.append(img)
+                
+        # Handle empty batches (e.g. at the end of epoch if corrupts occur)
+        if len(batch_images) == 0:
+            return np.zeros((1, self.image_size[0], self.image_size[1], 3), dtype=np.float32)
+            
+        return np.array(batch_images, dtype=np.float32)
+
+    def get_sample(self, idx):
+        """Load and resize a single image. No augmentations applied here!"""
+        path = self.paths[idx]
+        return self._load_image(path)
+
+    def _load_image(self, path):
+        """Load and resize image to target size. Returns None on failure."""
+        try:
+            img = cv2.imread(path)
+            if img is None:
+                return None
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = cv2.resize(img, (self.image_size[1], self.image_size[0]))
+            return img.astype(np.float32) / 255.0
+        except Exception:
+            return None
