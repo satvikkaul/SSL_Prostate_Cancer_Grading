@@ -17,8 +17,6 @@ import sys
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-
 import tensorflow as tf
 import pandas as pd
 import numpy as np
@@ -32,6 +30,16 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import SGD, Adam
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 
+
+def print_device_configuration():
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+    gpus = tf.config.list_physical_devices('GPU')
+    if visible_devices:
+        print(f"CUDA_VISIBLE_DEVICES preset to: {visible_devices}")
+    else:
+        print("CUDA_VISIBLE_DEVICES not set; using TensorFlow default device selection.")
+    print(f"Detected GPUs: {len(gpus)}")
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
@@ -43,7 +51,7 @@ IMG_DIM = (128, 128, 3)
 
 # Paths
 TRAIN_CSV = "./dataset/Train.csv"
-TEST_CSV = "./dataset/Test.csv"
+VAL_CSV = "./dataset/Val.csv"
 IMG_DIR = "./dataset/images/"
 
 # Output
@@ -57,6 +65,7 @@ print(f"Batch Size: {BATCH_SIZE}")
 print(f"Epochs: {EPOCHS}")
 print(f"Learning Rate: {LEARNING_RATE}")
 print("Note: Encoder initialized with RANDOM weights (no pretraining)")
+print_device_configuration()
 print("=" * 70)
 
 # ============================================================================
@@ -65,12 +74,12 @@ print("=" * 70)
 
 print("\n[1/4] Loading Data...")
 df_train = pd.read_csv(TRAIN_CSV)
-df_test = pd.read_csv(TEST_CSV)
+df_val = pd.read_csv(VAL_CSV)
 df_train['image_name'] = df_train['image_name'].astype(str)
-df_test['image_name'] = df_test['image_name'].astype(str)
+df_val['image_name'] = df_val['image_name'].astype(str)
 class_columns = ['NC', 'G3', 'G5', 'G4']
 print(f"✓ Training samples: {len(df_train)}")
-print(f"✓ Test samples: {len(df_test)}")
+print(f"✓ Validation samples: {len(df_val)}")
 
 # Create data generators
 train_generator = DataGenerator(
@@ -84,8 +93,8 @@ train_generator = DataGenerator(
     mode='custom'
 )
 
-test_generator = DataGenerator(
-    data_frame=df_test,
+val_generator = DataGenerator(
+    data_frame=df_val,
     y=IMG_DIM[0], x=IMG_DIM[1], target_channels=IMG_DIM[2],
     y_cols=class_columns,
     batch_size=BATCH_SIZE,
@@ -97,7 +106,7 @@ test_generator = DataGenerator(
 
 # Convert to tf.data
 train_dataset = create_tf_dataset(train_generator)
-test_dataset = create_tf_dataset(test_generator)
+val_dataset = create_tf_dataset(val_generator)
 
 print(f"✓ Data generators ready")
 
@@ -189,7 +198,7 @@ print("=" * 70)
 history = classifier.fit(
     train_dataset,
     epochs=EPOCHS,
-    validation_data=test_dataset,
+    validation_data=val_dataset,
     callbacks=[
         ModelCheckpoint(
             os.path.join(OUTPUT_DIR, 'best_baseline_classifier.keras'),

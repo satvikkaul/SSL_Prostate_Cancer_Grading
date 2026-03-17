@@ -5,6 +5,7 @@ import io
 import cv2
 import numpy as np
 from PIL import Image
+from sklearn.model_selection import train_test_split
 
 # Configuration
 DATASET_DIR = './dataset'
@@ -12,6 +13,9 @@ PARTITION_DIR = os.path.join(DATASET_DIR, 'partition')
 PANDA_PARQUET_DIR = os.path.join(DATASET_DIR, 'PANDA-PLUS-Bench', 'data')
 PANDA_IMAGES_DIR = os.path.join(DATASET_DIR, 'panda_images')
 PANDA_PARQUET_FILE = 'baseline-00000-of-00001.parquet'
+TRAIN_SPLIT_FILE = 'TrainSplit.csv'
+VAL_FILE = 'Val.csv'
+CLASS_COLUMNS = ['NC', 'G3', 'G5', 'G4']
 
 def convert_sicap_to_csv(partition_folder):
     # Find all excel files recursively
@@ -83,6 +87,48 @@ def convert_sicap_to_csv(partition_folder):
         save_path = os.path.join(DATASET_DIR, output_name)
         new_df.to_csv(save_path, index=False)
         print(f"Saved {save_path}")
+
+
+def create_validation_split(val_fraction=0.2, random_state=42):
+    """
+    Create an explicit validation split from SICAPv2 Train.csv.
+
+    Output files:
+      - dataset/TrainSplit.csv
+      - dataset/Val.csv
+    """
+    train_csv_path = os.path.join(DATASET_DIR, 'Train.csv')
+    if not os.path.exists(train_csv_path):
+        print(f"ERROR: Train.csv not found at {train_csv_path}")
+        return None, None
+
+    df = pd.read_csv(train_csv_path)
+    missing_cols = [col for col in ['image_name'] + CLASS_COLUMNS if col not in df.columns]
+    if missing_cols:
+        print(f"ERROR: Train.csv missing required columns: {missing_cols}")
+        return None, None
+
+    labels = np.argmax(df[CLASS_COLUMNS].values, axis=1)
+    train_df, val_df = train_test_split(
+        df,
+        test_size=val_fraction,
+        random_state=random_state,
+        shuffle=True,
+        stratify=labels
+    )
+
+    train_df = train_df.reset_index(drop=True)
+    val_df = val_df.reset_index(drop=True)
+
+    train_split_path = os.path.join(DATASET_DIR, TRAIN_SPLIT_FILE)
+    val_path = os.path.join(DATASET_DIR, VAL_FILE)
+    train_df.to_csv(train_split_path, index=False)
+    val_df.to_csv(val_path, index=False)
+
+    print(f"Validation split created:")
+    print(f"  Train split: {len(train_df)} samples -> {train_split_path}")
+    print(f"  Val split:   {len(val_df)} samples -> {val_path}")
+    return train_split_path, val_path
 
 def extract_panda_patches(target_size=(128, 128), limit=None):
     """
@@ -169,7 +215,7 @@ def build_pretrain_manifest():
     """
     Builds a unified Pretrain_Manifest.csv for MoCo v2 pretraining.
     Merges:
-      - ALL SICAPv2 images (Train.csv + Test.csv) — labels ignored
+      - Non-test SICAPv2 images (TrainSplit.csv preferred, else Train.csv)
       - ALL extracted PANDA images from PANDA_IMAGES_DIR
     
     Output CSV has a single column: 'image_path' (absolute paths).
@@ -177,9 +223,10 @@ def build_pretrain_manifest():
     """
     all_paths = []
     
-    # 1. Collect SICAPv2 paths (Train + Test)
+    # 1. Collect non-test SICAPv2 paths
     sicap_img_dir = os.path.abspath(os.path.join(DATASET_DIR, 'images'))
-    for csv_name in ['Train.csv', 'Test.csv']:
+    sicap_csvs = [TRAIN_SPLIT_FILE] if os.path.exists(os.path.join(DATASET_DIR, TRAIN_SPLIT_FILE)) else ['Train.csv']
+    for csv_name in sicap_csvs:
         csv_path = os.path.join(DATASET_DIR, csv_name)
         if os.path.exists(csv_path):
             df = pd.read_csv(csv_path)
@@ -188,7 +235,7 @@ def build_pretrain_manifest():
                 # Filter out any paths that don't actually exist
                 valid = [p for p in paths if os.path.exists(p)]
                 all_paths.extend(valid)
-                print(f"  SICAPv2 {csv_name}: {len(valid)} valid images found.")
+                print(f"  SICAPv2 {csv_name}: {len(valid)} valid non-test images found.")
             else:
                 print(f"  Warning: {csv_name} has no 'image_name' column.")
         else:
@@ -222,11 +269,15 @@ if __name__ == "__main__":
     convert_sicap_to_csv(PARTITION_DIR)
     print("SICAPv2 conversion complete.\n")
 
-    # Step 2: Extract PANDA patches
+    # Step 2: Create explicit train/validation split from SICAP Train.csv
+    print("--- Creating SICAP validation split ---")
+    create_validation_split()
+
+    # Step 3: Extract PANDA patches
     print("--- Extracting PANDA-PLUS patches ---")
     extract_panda_patches(target_size=(128, 128))
 
-    # Step 3: Build unified pretraining manifest
+    # Step 4: Build unified pretraining manifest
     print("\n--- Building Pretrain Manifest ---")
     build_pretrain_manifest()
     print("\nAll setup complete.")

@@ -125,7 +125,7 @@ Dense(4, Softmax) → [NC, G3, G5, G4] probabilities
 **Purpose:** Trains the SimCLR model using contrastive learning on unlabeled histopathology images.
 
 **Key Responsibilities:**
-- Loads training data from CSV (Train.csv)
+- Loads unlabeled pretraining images from `TrainSplit.csv`
 - Creates two augmented views of each image
 - Trains encoder + projection head with NT-Xent loss
 - Saves pretrained encoder weights for downstream tasks
@@ -1004,12 +1004,12 @@ lr(t) = lr_initial * (0.1 + 0.9 * cos(πt / total_steps))
               ↓
     setup_data.py (Clean headers, merge G4C, validate)
               ↓
-    Clean CSV Files (Train.csv, Test.csv)
+    Clean CSV Files (Train.csv, Test.csv, TrainSplit.csv, Val.csv)
 
 ┌─────────────────────────────────────────────────────────────────┐
 │              SIMCLR SSL PRETRAINING (simclr_pretrain.py)         │
 └─────────────────────────────────────────────────────────────────┘
-    Train.csv + images/
+    TrainSplit.csv + images/
               ↓
     SimCLRDataGenerator (load images)
               ↓
@@ -1032,7 +1032,7 @@ lr(t) = lr_initial * (0.1 + 0.9 * cos(πt / total_steps))
 ┌─────────────────────────────────────────────────────────────────┐
 │         DOWNSTREAM CLASSIFICATION (fine_tune_simclr.py)          │
 └─────────────────────────────────────────────────────────────────┘
-    Train.csv + Test.csv + images/ + encoder_weights.h5
+    TrainSplit.csv + Val.csv + images/ + encoder_weights.h5
               ↓
     Load pretrained encoder
               ↓

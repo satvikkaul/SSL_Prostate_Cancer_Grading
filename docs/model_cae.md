@@ -102,7 +102,7 @@ Dense(4, Softmax) → [NC, G3, G5, G4] probabilities
 **Purpose:** Trains the Convolutional Autoencoder (CAE) on unlabeled images to learn feature representations through reconstruction.
 
 **Key Responsibilities:**
-- Loads training data from CSV (Train.csv)
+- Loads unlabeled pretraining images from `TrainSplit.csv`
 - Initializes the VAE architecture
 - Trains the model to reconstruct input images
 - Saves pretrained encoder weights for downstream tasks
@@ -655,12 +655,12 @@ weights = weights - lr * clipped_gradient
               ↓
     setup_data.py (Clean headers, merge G4C, validate)
               ↓
-    Clean CSV Files (Train.csv, Test.csv)
+    Clean CSV Files (Train.csv, Test.csv, TrainSplit.csv, Val.csv)
 
 ┌─────────────────────────────────────────────────────────────────┐
 │                    SSL PRETRAINING (training/cae/train_cae.py)     │
 └─────────────────────────────────────────────────────────────────┘
-    Train.csv + images/
+    TrainSplit.csv + images/
               ↓
     DataGenerator (load + augment, vae_mode=True)
               ↓
@@ -673,7 +673,7 @@ weights = weights - lr * clipped_gradient
 ┌─────────────────────────────────────────────────────────────────┐
 │              DOWNSTREAM CLASSIFICATION (training/cae/finetune_cae.py)            │
 └─────────────────────────────────────────────────────────────────┘
-    Train.csv + Test.csv + images/ + VAE.weights.h5
+    TrainSplit.csv + Val.csv + images/ + VAE.weights.h5
               ↓
     Load pretrained encoder
               ↓

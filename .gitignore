@@ -18,6 +18,3 @@ venv/
 .idea/
 .vscode/
 
-# Local Context and Plans
-context.md
-plan.md

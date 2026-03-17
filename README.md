@@ -3,11 +3,11 @@
 **Deep Learning - Final Project**  
 **Toronto Metropolitan University (Ryerson University)**
 
-This project implements and compares **three Self-Supervised Learning (SSL)** approaches for histopathological image analysis, specifically targeting prostate cancer Gleason grading using the **SICAPv2 dataset**.
+This project implements and compares baseline and self-supervised learning pipelines for histopathological image analysis, specifically targeting prostate cancer Gleason grading using the **SICAPv2 dataset**. The baseline, CAE, and SimCLR paths are complete; the MoCo v2 path is under active development.
 
 ## Project Overview
 
-The goal is to demonstrate how self-supervised pretraining improves deep learning performance on medical imaging tasks with limited labeled data. We compare three approaches:
+The goal is to demonstrate how self-supervised pretraining improves deep learning performance on medical imaging tasks with limited labeled data. The current repo contains three completed comparison paths:
 
 1. **Baseline (No SSL):** Classifier trained from scratch with random initialization
 2. **Autoencoder-SSL:** Reconstruction-based SSL using Convolutional Autoencoder
@@ -17,7 +17,7 @@ The goal is to demonstrate how self-supervised pretraining improves deep learnin
 
 * **Dataset:** [SICAPv2](https://data.mendeley.com/datasets/9xxm58dvs3/1) - Prostate Cancer Histopathology (~18,000 patches)
 * **Task:** Gleason Grading (4-class classification: NC, G3, G4, G5)
-* **Methods:** Three SSL approaches + comprehensive comparison
+* **Methods:** Baseline, CAE, SimCLR, plus an in-progress MoCo v2 path
 * **Image Size:** 128×128×3 RGB patches (following paper specification)
 
 ### Our Approach
@@ -26,6 +26,7 @@ We implement and compare:
 - **Reconstruction-based SSL** (Autoencoder): Learns texture/structure features
 - **Contrastive SSL** (SimCLR): Learns discriminative features via positive/negative pairs
 - **Baseline**: No pretraining (demonstrates SSL benefit)
+- **MoCo v2 (in progress)**: Momentum encoder + queue-based contrastive learning
 
 ## Documentation
 - [Autoencoder architecture (model_cae.md)](docs/model_cae.md)
@@ -87,7 +88,7 @@ pip install -r requirements.txt
 
 ### 3. Generate CSV Labels
 
-* The training code requires specific CSV files (Train.csv and Test.csv) to map images to their cancer grades. The raw dataset comes with Excel files that the code cannot read by default.
+* The training code requires cleaned CSV files for supervised splits and pretraining manifests. The raw dataset comes with Excel files that the code cannot read by default.
 * Run the provided setup script to automatically generate these files:
 
 ```Bash
@@ -96,20 +97,27 @@ python data/setup.py
 What this does:
 
 * Scans the dataset/partition/ folder.
-* Converts the raw Excel files into dataset/Train.csv and dataset/Test.csv.
+* Converts the raw Excel files into `dataset/Train.csv` and `dataset/Test.csv`.
+* Creates `dataset/TrainSplit.csv` and `dataset/Val.csv` for clean model selection.
+* Builds `dataset/Pretrain_Manifest.csv` from non-test SICAP data plus PANDA patches.
 * Formats the columns to match the model's expected One-Hot Encoding (NC, G3, G4, G5).
+
+**Split protocol used by the code:**
+- `TrainSplit.csv`: supervised training and SSL pretraining from SICAP
+- `Val.csv`: checkpoint selection and hyperparameter comparison
+- `Test.csv`: final held-out evaluation only
 
 ### 4. Configure Training (Optional)
 
 * Open `training/cae/train_cae.py` to adjust training hyperparameters if needed:
 * Batch Size: Set to 16 by default. If you run out of memory (OOM error), lower it to 8.
-* GPU Settings: The code defaults to using GPU 0. If you are running on CPU, comment out the line os.environ["CUDA_VISIBLE_DEVICES"] = "0".
+* Device Settings: The training scripts use TensorFlow's default device selection. If you want to force a specific GPU, set `CUDA_VISIBLE_DEVICES` in your shell before launching the script. On CPU-only machines, the scripts fall back automatically. MoCo mixed precision is enabled automatically only when a GPU is detected.
 
 ## Usage
 
 ### Training Pipeline
 
-We provide three complete training pipelines for comparison:
+We provide three complete training pipelines for comparison. All training scripts now use `TrainSplit.csv` for fitting and `Val.csv` for model selection; use `Test.csv` only for final evaluation.
 
 ---
 
@@ -200,6 +208,7 @@ python training/simclr/finetune_simclr.py
 python evaluation/baseline/eval_baseline.py    # Baseline metrics
 python evaluation/cae/eval_cae.py              # Autoencoder metrics
 python evaluation/simclr/eval_simclr.py        # SimCLR metrics
+```
 
 #### Compare All Three
 ```bash
@@ -220,24 +229,29 @@ python evaluation/shared/compare_models.py
 
 ---
 
-### Quick Start (Google Colab Pro) 🚀
+### Quick Start (Google Colab Pro)
 
-**Recommended for GPU training!**
+**Recommended for GPU training**
 
 1. Upload dataset to Google Drive
 2. Open [Google Colab](https://colab.research.google.com/)
-3. Clone this repo:
+3. Set the runtime to GPU
+4. Clone this repo:
 ```python
 !git clone https://github.com/yourusername/SSL_Prostate_Cancer_Grading.git
 %cd SSL_Prostate_Cancer_Grading
 ```
-4. Run training scripts (see [GPU_TRAINING_GUIDE.md](GPU_TRAINING_GUIDE.md))
+5. Mount or copy the `dataset/` folder into the repo
+6. Run `python data/setup.py`
+7. Run training scripts (see [GPU_TRAINING_GUIDE.md](GPU_TRAINING_GUIDE.md))
 
 **Estimated time on Colab Pro:**
 - T4 GPU (Free): 4-6 hours total
 - A100 GPU (Pro): 2-3 hours total
 
----## Results & Comparison
+---
+
+## Results & Comparison
 
 ### Performance Summary
 

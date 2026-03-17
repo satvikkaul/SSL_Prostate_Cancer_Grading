@@ -3,8 +3,6 @@ import os
 import sys
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 #%% Libraries
 import tensorflow as tf
 import pandas as pd
@@ -17,6 +15,17 @@ import cv2
 import matplotlib.pyplot as plt 
 from PIL import Image,ImageOps
 import pickle
+
+
+def print_device_configuration():
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+    gpus = tf.config.list_physical_devices('GPU')
+    if visible_devices:
+        print(f"CUDA_VISIBLE_DEVICES preset to: {visible_devices}")
+    else:
+        print("CUDA_VISIBLE_DEVICES not set; using TensorFlow default device selection.")
+    print(f"Detected GPUs: {len(gpus)}")
+ 
 #%%
 # Hyper-parametrs (MATCHING PAPER: 128x128 patches!)
 input_dim = (128, 128, 3)  # Paper uses 128x128, NOT 512x512!
@@ -40,8 +49,8 @@ conv_layeri=[]
 conv_t_layeri=[]
 #%% I/O paths
 run_folders = {
-    "tsv_path": "./dataset/Train.csv"
-    ,"tsv_path_test":"./dataset/Test.csv"
+    "tsv_path": "./dataset/TrainSplit.csv"
+    ,"tsv_path_val":"./dataset/Val.csv"
     , "data_path": "./dataset/images/"
     , "model_path": './output/models/'
     , "results_path": './output/results/'
@@ -75,37 +84,17 @@ hyperparameters = {
 }
 create_json(hyperparameters, run_folders)
 
-label2=[]
-df_pneumo_2d = pd.read_csv(run_folders["tsv_path"])
-df_pneumo_2d.columns = ['image_name', 'NC', 'G3', 'G4', 'G5']
-
-df_pneumo_2d=(df_pneumo_2d.iloc[:,:])
-image_names=df_pneumo_2d["image_name"]
-dataset = []
-image_directory="./dataset/images/"
-for t,image_name in enumerate (image_names):
-    
-    if (image_name.split('.')[1]=="jpg"):
-        image=plt.imread(image_directory+image_name)
-        # image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        image=Image.fromarray(image) 
-        # image=image.resize((128, 128))        
-        dataset.append(np.array(image))
-        label2.append(t)
-
-dataset2=np.array(dataset)
-
-#################
-from sklearn.model_selection import train_test_split   
-x_train, x_val, ytrain,ytest=train_test_split(df_pneumo_2d,label2, test_size = 0.2, random_state = 0)
-# Saving Training set
-# x_train.to_csv (r'E:\ESR\General Codes\CAE\CAE.VAE\x_train512.csv', index = True, header=True)
+df_train = pd.read_csv(run_folders["tsv_path"])
+df_val = pd.read_csv(run_folders["tsv_path_val"])
+print_device_configuration()
+print(f"Loaded {len(df_train)} CAE training samples from {run_folders['tsv_path']}")
+print(f"Loaded {len(df_val)} CAE validation samples from {run_folders['tsv_path_val']}")
 
 
 if is_training:
 
     # import pdb; pdb.set_trace()
-    data_flow_train = DataGenerator(x_train
+    data_flow_train = DataGenerator(df_train
                                     , input_dim[0]
                                     , input_dim[1]
                                     , input_dim[2]
@@ -120,7 +109,7 @@ if is_training:
                                     , equalization=False
                                     )
 
-    data_flow_dev = DataGenerator(x_val
+    data_flow_dev = DataGenerator(df_val
                                   , input_dim[0]
                                   , input_dim[1]
                                   , input_dim[2]

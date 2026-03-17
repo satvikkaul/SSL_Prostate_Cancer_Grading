@@ -25,7 +25,7 @@ IMG_DIM = (128, 128, 3) # PAPER: Uses 128x128 patches, NOT 512x512!
 
 # Paths
 TRAIN_CSV = "./dataset/Train.csv"
-TEST_CSV = "./dataset/Test.csv"
+VAL_CSV = "./dataset/Val.csv"
 IMG_DIR = "./dataset/images/"
 WEIGHTS_PATH = './output/models/exp_0012/weights/VAE.weights.h5'  # Updated to new trained model 
 
@@ -33,11 +33,12 @@ WEIGHTS_PATH = './output/models/exp_0012/weights/VAE.weights.h5'  # Updated to n
 # --- 1. SETUP DATA GENERATORS ---
 print("Loading Data...")
 df_train = pd.read_csv(TRAIN_CSV)
-df_test = pd.read_csv(TEST_CSV)
+df_val = pd.read_csv(VAL_CSV)
 df_train['image_name'] = df_train['image_name'].astype(str)
-df_test['image_name'] = df_test['image_name'].astype(str)
+df_val['image_name'] = df_val['image_name'].astype(str)
 class_columns = ['NC', 'G3', 'G5', 'G4']  # MUST match CSV column order!
 print(f"Found {len(df_train)} training images.")
+print(f"Found {len(df_val)} validation images.")
 
 # Custom Generators
 train_generator = DataGenerator(
@@ -51,8 +52,8 @@ train_generator = DataGenerator(
     mode='custom'
 )
 
-test_generator = DataGenerator(
-    data_frame=df_test,
+val_generator = DataGenerator(
+    data_frame=df_val,
     y=IMG_DIM[0], x=IMG_DIM[1], target_channels=IMG_DIM[2],
     y_cols=class_columns,
     batch_size=BATCH_SIZE,
@@ -64,7 +65,7 @@ test_generator = DataGenerator(
 
 print("Converting to tf.data.Dataset...")
 train_dataset = create_tf_dataset(train_generator)
-test_dataset = create_tf_dataset(test_generator)
+val_dataset = create_tf_dataset(val_generator)
 
 # --- 2. BUILD MODEL & LOAD WEIGHTS ---
 print("Building Model and Loading SSL Weights...")
@@ -176,7 +177,7 @@ print(f"\nTraining with LR={LR_STAGE_1}, Frozen encoder layers: {sum([not l.trai
 history_stage1 = classifier.fit(
     train_dataset,
     epochs=EPOCHS_STAGE_1,
-    validation_data=test_dataset,
+    validation_data=val_dataset,
     # No class weights - focal loss handles imbalance internally
     callbacks=[ModelCheckpoint('./output/best_model_stage1.keras', save_best_only=True, monitor='val_loss')]
 )
@@ -199,7 +200,7 @@ classifier.compile(
 history_stage2 = classifier.fit(
     train_dataset,
     epochs=EPOCHS_STAGE_2,
-    validation_data=test_dataset,
+    validation_data=val_dataset,
     class_weight=class_weights_dict,  # ENABLED: Capped weights (0.5-2.0)
     callbacks=[
         ModelCheckpoint('./output/best_model_fine_tuned.keras', save_best_only=True, monitor='val_loss'),

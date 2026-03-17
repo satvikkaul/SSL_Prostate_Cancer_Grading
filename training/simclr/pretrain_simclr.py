@@ -22,8 +22,6 @@ import sys
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Change to your GPU ID
-
 import tensorflow as tf
 import pandas as pd
 import numpy as np
@@ -34,6 +32,16 @@ from models.cae_model import ConvVarAutoencoder
 from models.simclr_model import SimCLRModel, SimCLRTrainer
 from data.augmentations.aug_simclr import SimCLRAugmentation, create_simclr_augmentation_pair
 from data.generator import DataGenerator
+
+
+def print_device_configuration():
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+    gpus = tf.config.list_physical_devices('GPU')
+    if visible_devices:
+        print(f"CUDA_VISIBLE_DEVICES preset to: {visible_devices}")
+    else:
+        print("CUDA_VISIBLE_DEVICES not set; using TensorFlow default device selection.")
+    print(f"Detected GPUs: {len(gpus)}")
 
 # ============================================================================
 # CONFIGURATION
@@ -53,7 +61,7 @@ PROJECTION_HIDDEN = 256 # Hidden layer in projection head
 
 # Data paths
 TRAIN_CSV = "./dataset/Train.csv"
-TEST_CSV = "./dataset/Test.csv"
+VAL_CSV = "./dataset/Val.csv"
 IMG_DIR = "./dataset/images/"
 
 # Output paths
@@ -73,6 +81,7 @@ print(f"Epochs: {EPOCHS}")
 print(f"Learning Rate: {LEARNING_RATE}")
 print(f"Temperature: {TEMPERATURE}")
 print(f"Projection Dim: {PROJECTION_DIM}")
+print_device_configuration()
 print("=" * 70)
 
 # ============================================================================
@@ -81,9 +90,9 @@ print("=" * 70)
 
 print("\n[1/5] Loading Data...")
 df_train = pd.read_csv(TRAIN_CSV)
-df_test = pd.read_csv(TEST_CSV)
+df_val = pd.read_csv(VAL_CSV)
 print(f"✓ Training samples: {len(df_train)}")
-print(f"✓ Validation samples: {len(df_test)}")
+print(f"✓ Validation samples: {len(df_val)}")
 
 # Create custom data generator for contrastive learning
 class SimCLRDataGenerator(DataGenerator):
@@ -126,7 +135,7 @@ train_generator = SimCLRDataGenerator(
 )
 
 val_generator = SimCLRDataGenerator(
-    data_frame=df_test,
+    data_frame=df_val,
     y=IMG_SIZE, x=IMG_SIZE, target_channels=3,
     batch_size=BATCH_SIZE,
     path_to_img=IMG_DIR,
