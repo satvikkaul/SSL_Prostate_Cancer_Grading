@@ -12,6 +12,8 @@ import re
 import sys
 import time
 
+os.environ.setdefault("MPLCONFIGDIR", os.path.join("/tmp", "mplconfig"))
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -47,6 +49,8 @@ def configure_precision_policy():
         policy = "mixed_float16" if gpus else "float32"
 
     tf.keras.mixed_precision.set_global_policy(policy)
+    if not gpus:
+        tf.config.run_functions_eagerly(True)
     return policy, len(gpus)
 
 

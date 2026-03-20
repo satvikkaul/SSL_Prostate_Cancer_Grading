@@ -257,8 +257,10 @@ class MoCoV2Model:
         for wq, wk in zip(self.encoder_q.weights, self.encoder_k.weights):
             wk.assign(self.momentum * wk + (1.0 - self.momentum) * wq)
 
-    @tf.function
     def info_nce_loss(self, q, k):
+        # Keep the loss eager-friendly. On some CPU-only Apple Silicon setups,
+        # tracing this small function can stall for a long time while the eager
+        # version runs immediately.
         q = tf.cast(q, tf.float32)
         k = tf.cast(k, tf.float32)
         l_pos = tf.reduce_sum(q * k, axis=1, keepdims=True)

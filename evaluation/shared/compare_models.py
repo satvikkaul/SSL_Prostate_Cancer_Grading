@@ -1,367 +1,242 @@
 """
-Compare All Models: Baseline vs Autoencoder-SSL vs SimCLR-SSL
+Compare all available model evaluation outputs.
 
-This script generates comprehensive comparison across all three approaches:
-1. Baseline (No SSL - Random initialization)
-2. Autoencoder-SSL (Reconstruction-based SSL)
-3. SimCLR-SSL (Contrastive learning SSL)
-
-Usage:
-    python compare_all_models.py
-
-Prerequisites:
-    - All three models must be trained and evaluated
-    - Evaluation metrics files must exist
-
-Output:
-    - Comparison table: ./output/model_comparison.csv
-    - Comparison plots: ./output/model_comparison_plots.png
-    - Summary report: ./output/comparison_report.txt
+Reads metrics from:
+  - ./output/baseline/evaluation_metrics.txt
+  - ./output/cae/evaluation_metrics.txt
+  - ./output/simclr/evaluation_metrics.txt
+  - ./output/moco/evaluation_metrics.txt
 """
 
 import os
-import pandas as pd
-import numpy as np
+import re
+
+os.environ.setdefault("MPLCONFIGDIR", os.path.join("/tmp", "mplconfig"))
+
 import matplotlib.pyplot as plt
-import seaborn as sns
-from pathlib import Path
+import numpy as np
+import pandas as pd
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
 
-# Paths to evaluation results
-BASELINE_METRICS = "./output/baseline/evaluation_metrics.txt"
-AUTOENCODER_METRICS = "./output/final_confusion_matrix.png"  # Will parse from existing results
-SIMCLR_METRICS = "./output/simclr/evaluation_metrics.txt"
-
-# Paths to training histories
-BASELINE_HISTORY = "./output/baseline/training_history.csv"
-AUTOENCODER_HISTORY = "./output/models/exp_0012/hyperparameters.json"  # Adjust if needed
-SIMCLR_HISTORY = "./output/simclr/training_log.csv"
-
-# Output
+CLASS_NAMES = ["NC", "G3", "G5", "G4"]
 OUTPUT_DIR = "./output"
 COMPARISON_FILE = os.path.join(OUTPUT_DIR, "model_comparison.csv")
 COMPARISON_PLOT = os.path.join(OUTPUT_DIR, "model_comparison_plots.png")
 COMPARISON_REPORT = os.path.join(OUTPUT_DIR, "comparison_report.txt")
 
-CLASS_NAMES = ['NC', 'G3', 'G5', 'G4']
+MODEL_SPECS = [
+    ("Baseline (No SSL)", "./output/baseline/evaluation_metrics.txt", "#ff9999"),
+    ("CAE-SSL", "./output/cae/evaluation_metrics.txt", "#66b3ff"),
+    ("SimCLR-SSL", "./output/simclr/evaluation_metrics.txt", "#99ff99"),
+    ("MoCo-SSL", "./output/moco/evaluation_metrics.txt", "#ffcc80"),
+]
 
-print("=" * 70)
-print("Model Comparison: Baseline vs Autoencoder-SSL vs SimCLR-SSL")
-print("=" * 70)
 
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
+def empty_metrics():
+    return {
+        "overall_accuracy": np.nan,
+        "macro_f1": np.nan,
+        "weighted_f1": np.nan,
+        "cohens_kappa": np.nan,
+        "class_metrics": {
+            cls: {"precision": np.nan, "recall": np.nan, "f1": np.nan}
+            for cls in CLASS_NAMES
+        },
+    }
+
 
 def parse_metrics_file(filepath):
-    """
-    Parse evaluation metrics file and extract key metrics.
-    Returns dict with accuracy, per-class metrics, etc.
-    """
+    metrics = empty_metrics()
     if not os.path.exists(filepath):
-        print(f"Warning: {filepath} not found. Returning placeholder values.")
-        return {
-            'overall_accuracy': 0.0,
-            'macro_f1': 0.0,
-            'weighted_f1': 0.0,
-            'cohens_kappa': 0.0,
-            'class_metrics': {cls: {'precision': 0.0, 'recall': 0.0, 'f1': 0.0} for cls in CLASS_NAMES}
-        }
-    
-    metrics = {
-        'overall_accuracy': 0.0,
-        'macro_f1': 0.0,
-        'weighted_f1': 0.0,
-        'cohens_kappa': 0.0,
-        'class_metrics': {cls: {'precision': 0.0, 'recall': 0.0, 'f1': 0.0} for cls in CLASS_NAMES}
-    }
-    
-    with open(filepath, 'r') as f:
+        return None
+
+    with open(filepath, "r") as f:
         content = f.read()
-        
-        # Parse overall accuracy
-        if 'accuracy' in content:
-            # Look for patterns like "accuracy  0.628" or similar
-            import re
-            acc_match = re.search(r'accuracy\s+(\d+\.\d+)', content)
-            if acc_match:
-                metrics['overall_accuracy'] = float(acc_match.group(1))
-        
-        # Parse macro avg f1-score
-        if 'macro avg' in content:
-            macro_match = re.search(r'macro avg\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)', content)
-            if macro_match:
-                metrics['macro_f1'] = float(macro_match.group(3))
-        
-        # Parse weighted avg f1-score
-        if 'weighted avg' in content:
-            weighted_match = re.search(r'weighted avg\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)', content)
-            if weighted_match:
-                metrics['weighted_f1'] = float(weighted_match.group(3))
-        
-        # Parse Cohen's Kappa
-        if "Cohen's Kappa" in content:
-            kappa_match = re.search(r"Cohen's Kappa.*?(\d+\.\d+)", content)
-            if kappa_match:
-                metrics['cohens_kappa'] = float(kappa_match.group(1))
-        
-        # Parse per-class metrics
-        for cls in CLASS_NAMES:
-            cls_match = re.search(rf'{cls}\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)', content)
-            if cls_match:
-                metrics['class_metrics'][cls] = {
-                    'precision': float(cls_match.group(1)),
-                    'recall': float(cls_match.group(2)),
-                    'f1': float(cls_match.group(3))
-                }
-    
+
+    acc_match = re.search(r"accuracy\s+(\d+\.\d+)\s+\d+", content)
+    if acc_match:
+        metrics["overall_accuracy"] = float(acc_match.group(1))
+
+    macro_match = re.search(r"macro avg\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)", content)
+    if macro_match:
+        metrics["macro_f1"] = float(macro_match.group(3))
+
+    weighted_match = re.search(r"weighted avg\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)", content)
+    if weighted_match:
+        metrics["weighted_f1"] = float(weighted_match.group(3))
+
+    kappa_match = re.search(r"Cohen's Kappa.*?(\d+\.\d+)", content)
+    if kappa_match:
+        metrics["cohens_kappa"] = float(kappa_match.group(1))
+
+    for cls in CLASS_NAMES:
+        cls_match = re.search(rf"^{cls}\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)", content, re.MULTILINE)
+        if cls_match:
+            metrics["class_metrics"][cls] = {
+                "precision": float(cls_match.group(1)),
+                "recall": float(cls_match.group(2)),
+                "f1": float(cls_match.group(3)),
+            }
+
     return metrics
 
-def get_autoencoder_metrics():
-    """
-    Extract metrics for the autoencoder model from notes.md or create manual entry.
-    """
-    # Based on your notes.md final results
-    return {
-        'overall_accuracy': 0.628,
-        'macro_f1': 0.39,
-        'weighted_f1': 0.62,
-        'cohens_kappa': 0.50,  # Estimated
-        'class_metrics': {
-            'NC': {'precision': 0.80, 'recall': 0.85, 'f1': 0.83},
-            'G3': {'precision': 0.14, 'recall': 0.13, 'f1': 0.13},
-            'G5': {'precision': 0.00, 'recall': 0.00, 'f1': 0.00},
-            'G4': {'precision': 0.54, 'recall': 0.65, 'f1': 0.59}
-        }
-    }
 
-# ============================================================================
-# LOAD METRICS
-# ============================================================================
+def load_all_metrics():
+    loaded = []
+    for model_name, metrics_path, color in MODEL_SPECS:
+        metrics = parse_metrics_file(metrics_path)
+        if metrics is None:
+            print(f"Skipping {model_name}: missing {metrics_path}")
+            continue
+        loaded.append((model_name, metrics_path, color, metrics))
+        print(f"Loaded {model_name}: {metrics_path}")
+    return loaded
 
-print("\n[1/4] Loading metrics from all models...")
 
-# Baseline
-baseline_metrics = parse_metrics_file(BASELINE_METRICS)
-print(f"✓ Baseline metrics loaded (Accuracy: {baseline_metrics['overall_accuracy']:.3f})")
+def build_tables(loaded_metrics):
+    overall_rows = []
+    class_rows = []
 
-# Autoencoder (from your existing results)
-autoencoder_metrics = get_autoencoder_metrics()
-print(f"✓ Autoencoder-SSL metrics loaded (Accuracy: {autoencoder_metrics['overall_accuracy']:.3f})")
+    for model_name, metrics_path, color, metrics in loaded_metrics:
+        overall_rows.append(
+            {
+                "Model": model_name,
+                "Metrics Path": metrics_path,
+                "Overall Accuracy": metrics["overall_accuracy"],
+                "Macro F1-Score": metrics["macro_f1"],
+                "Weighted F1-Score": metrics["weighted_f1"],
+                "Cohen's Kappa": metrics["cohens_kappa"],
+                "Color": color,
+            }
+        )
 
-# SimCLR
-simclr_metrics = parse_metrics_file(SIMCLR_METRICS)
-print(f"✓ SimCLR-SSL metrics loaded (Accuracy: {simclr_metrics['overall_accuracy']:.3f})")
+        for cls in CLASS_NAMES:
+            class_rows.append(
+                {
+                    "Model": model_name,
+                    "Class": cls,
+                    "Precision": metrics["class_metrics"][cls]["precision"],
+                    "Recall": metrics["class_metrics"][cls]["recall"],
+                    "F1-Score": metrics["class_metrics"][cls]["f1"],
+                }
+            )
 
-# ============================================================================
-# CREATE COMPARISON TABLE
-# ============================================================================
+    return pd.DataFrame(overall_rows), pd.DataFrame(class_rows)
 
-print("\n[2/4] Creating comparison table...")
 
-# Overall metrics comparison
-overall_comparison = pd.DataFrame({
-    'Model': ['Baseline (No SSL)', 'Autoencoder-SSL', 'SimCLR-SSL'],
-    'Overall Accuracy': [
-        baseline_metrics['overall_accuracy'],
-        autoencoder_metrics['overall_accuracy'],
-        simclr_metrics['overall_accuracy']
-    ],
-    'Macro F1-Score': [
-        baseline_metrics['macro_f1'],
-        autoencoder_metrics['macro_f1'],
-        simclr_metrics['macro_f1']
-    ],
-    'Weighted F1-Score': [
-        baseline_metrics['weighted_f1'],
-        autoencoder_metrics['weighted_f1'],
-        simclr_metrics['weighted_f1']
-    ],
-    "Cohen's Kappa": [
-        baseline_metrics['cohens_kappa'],
-        autoencoder_metrics['cohens_kappa'],
-        simclr_metrics['cohens_kappa']
-    ]
-})
+def plot_comparison(overall_df, class_df):
+    fig = plt.figure(figsize=(16, 12))
+    colors = overall_df["Color"].tolist()
+    labels = overall_df["Model"].tolist()
 
-# Per-class comparison
-class_comparison_data = []
-for cls in CLASS_NAMES:
-    for model_name, metrics in [
-        ('Baseline', baseline_metrics),
-        ('Autoencoder', autoencoder_metrics),
-        ('SimCLR', simclr_metrics)
-    ]:
-        class_comparison_data.append({
-            'Model': model_name,
-            'Class': cls,
-            'Precision': metrics['class_metrics'][cls]['precision'],
-            'Recall': metrics['class_metrics'][cls]['recall'],
-            'F1-Score': metrics['class_metrics'][cls]['f1']
-        })
-
-class_comparison = pd.DataFrame(class_comparison_data)
-
-# Save tables
-overall_comparison.to_csv(COMPARISON_FILE, index=False)
-class_comparison.to_csv(COMPARISON_FILE.replace('.csv', '_per_class.csv'), index=False)
-print(f"✓ Saved comparison tables: {COMPARISON_FILE}")
-
-# ============================================================================
-# CREATE COMPARISON PLOTS
-# ============================================================================
-
-print("\n[3/4] Generating comparison plots...")
-
-fig = plt.figure(figsize=(16, 10))
-
-# Plot 1: Overall Accuracy Comparison
-ax1 = plt.subplot(2, 3, 1)
-models = overall_comparison['Model']
-accuracies = overall_comparison['Overall Accuracy']
-colors = ['#ff9999', '#66b3ff', '#99ff99']
-bars = ax1.bar(range(len(models)), accuracies, color=colors, edgecolor='black', linewidth=1.5)
-ax1.set_ylabel('Accuracy', fontsize=12)
-ax1.set_title('Overall Accuracy Comparison', fontsize=14, fontweight='bold')
-ax1.set_xticks(range(len(models)))
-ax1.set_xticklabels(['Baseline', 'Autoencoder', 'SimCLR'], rotation=0)
-ax1.set_ylim([0, 1])
-ax1.grid(axis='y', alpha=0.3)
-# Add value labels on bars
-for i, bar in enumerate(bars):
-    height = bar.get_height()
-    ax1.text(bar.get_x() + bar.get_width()/2., height,
-            f'{height:.3f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
-
-# Plot 2: F1-Score Comparison
-ax2 = plt.subplot(2, 3, 2)
-x = np.arange(len(models))
-width = 0.35
-ax2.bar(x - width/2, overall_comparison['Macro F1-Score'], width, label='Macro F1', color='#ff9999', edgecolor='black')
-ax2.bar(x + width/2, overall_comparison['Weighted F1-Score'], width, label='Weighted F1', color='#66b3ff', edgecolor='black')
-ax2.set_ylabel('F1-Score', fontsize=12)
-ax2.set_title('F1-Score Comparison', fontsize=14, fontweight='bold')
-ax2.set_xticks(x)
-ax2.set_xticklabels(['Baseline', 'Autoencoder', 'SimCLR'], rotation=0)
-ax2.legend()
-ax2.set_ylim([0, 1])
-ax2.grid(axis='y', alpha=0.3)
-
-# Plot 3: Cohen's Kappa
-ax3 = plt.subplot(2, 3, 3)
-kappas = overall_comparison["Cohen's Kappa"]
-bars = ax3.bar(range(len(models)), kappas, color=colors, edgecolor='black', linewidth=1.5)
-ax3.set_ylabel("Cohen's Kappa", fontsize=12)
-ax3.set_title("Agreement Score (Cohen's Kappa)", fontsize=14, fontweight='bold')
-ax3.set_xticks(range(len(models)))
-ax3.set_xticklabels(['Baseline', 'Autoencoder', 'SimCLR'], rotation=0)
-ax3.set_ylim([0, 1])
-ax3.grid(axis='y', alpha=0.3)
-for i, bar in enumerate(bars):
-    height = bar.get_height()
-    ax3.text(bar.get_x() + bar.get_width()/2., height,
-            f'{height:.3f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
-
-# Plot 4-7: Per-Class Recall
-for idx, cls in enumerate(CLASS_NAMES):
-    ax = plt.subplot(2, 3, 4 + idx)
-    cls_data = class_comparison[class_comparison['Class'] == cls]
-    recalls = cls_data['Recall'].values
-    bars = ax.bar(range(len(models)), recalls, color=colors, edgecolor='black', linewidth=1.5)
-    ax.set_ylabel('Recall', fontsize=12)
-    ax.set_title(f'{cls} Class Recall', fontsize=14, fontweight='bold')
-    ax.set_xticks(range(len(models)))
-    ax.set_xticklabels(['Baseline', 'Autoencoder', 'SimCLR'], rotation=0)
-    ax.set_ylim([0, 1])
-    ax.grid(axis='y', alpha=0.3)
-    for i, bar in enumerate(bars):
+    ax1 = plt.subplot(3, 3, 1)
+    bars = ax1.bar(range(len(labels)), overall_df["Overall Accuracy"], color=colors, edgecolor="black")
+    ax1.set_title("Overall Accuracy")
+    ax1.set_xticks(range(len(labels)))
+    ax1.set_xticklabels(labels, rotation=10, ha="right")
+    ax1.set_ylim([0, 1])
+    ax1.grid(axis="y", alpha=0.3)
+    for bar in bars:
         height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height,
-                f'{height:.2f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+        ax1.text(bar.get_x() + bar.get_width() / 2.0, height, f"{height:.3f}", ha="center", va="bottom")
 
-plt.tight_layout()
-plt.savefig(COMPARISON_PLOT, dpi=150, bbox_inches='tight')
-print(f"✓ Saved comparison plots: {COMPARISON_PLOT}")
+    ax2 = plt.subplot(3, 3, 2)
+    x = np.arange(len(labels))
+    width = 0.35
+    ax2.bar(x - width / 2, overall_df["Macro F1-Score"], width, label="Macro F1", color="#ef9a9a", edgecolor="black")
+    ax2.bar(x + width / 2, overall_df["Weighted F1-Score"], width, label="Weighted F1", color="#90caf9", edgecolor="black")
+    ax2.set_title("F1 Scores")
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(labels, rotation=10, ha="right")
+    ax2.set_ylim([0, 1])
+    ax2.legend()
+    ax2.grid(axis="y", alpha=0.3)
 
-# ============================================================================
-# GENERATE SUMMARY REPORT
-# ============================================================================
+    ax3 = plt.subplot(3, 3, 3)
+    bars = ax3.bar(range(len(labels)), overall_df["Cohen's Kappa"], color=colors, edgecolor="black")
+    ax3.set_title("Cohen's Kappa")
+    ax3.set_xticks(range(len(labels)))
+    ax3.set_xticklabels(labels, rotation=10, ha="right")
+    ax3.set_ylim([0, 1])
+    ax3.grid(axis="y", alpha=0.3)
+    for bar in bars:
+        height = bar.get_height()
+        ax3.text(bar.get_x() + bar.get_width() / 2.0, height, f"{height:.3f}", ha="center", va="bottom")
 
-print("\n[4/4] Generating summary report...")
+    for idx, cls in enumerate(CLASS_NAMES):
+        ax = plt.subplot(3, 3, 4 + idx)
+        cls_data = class_df[class_df["Class"] == cls]
+        bars = ax.bar(range(len(cls_data)), cls_data["Recall"], color=colors[: len(cls_data)], edgecolor="black")
+        ax.set_title(f"{cls} Recall")
+        ax.set_xticks(range(len(cls_data)))
+        ax.set_xticklabels(cls_data["Model"].tolist(), rotation=10, ha="right")
+        ax.set_ylim([0, 1])
+        ax.grid(axis="y", alpha=0.3)
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width() / 2.0, height, f"{height:.2f}", ha="center", va="bottom")
 
-with open(COMPARISON_REPORT, 'w') as f:
-    f.write("=" * 70 + "\n")
-    f.write("MODEL COMPARISON REPORT\n")
-    f.write("Prostate Cancer Grading - Self-Supervised Learning Study\n")
-    f.write("=" * 70 + "\n\n")
-    
-    f.write("OVERALL METRICS COMPARISON\n")
-    f.write("-" * 70 + "\n")
-    f.write(overall_comparison.to_string(index=False))
-    f.write("\n\n")
-    
-    f.write("KEY FINDINGS\n")
-    f.write("-" * 70 + "\n")
-    
-    # Best model
-    best_idx = overall_comparison['Overall Accuracy'].idxmax()
-    best_model = overall_comparison.loc[best_idx, 'Model']
-    best_acc = overall_comparison.loc[best_idx, 'Overall Accuracy']
-    f.write(f"1. Best Performing Model: {best_model} ({best_acc:.3f} accuracy)\n")
-    
-    # SSL improvement
-    baseline_acc = overall_comparison.loc[0, 'Overall Accuracy']
-    autoencoder_acc = overall_comparison.loc[1, 'Overall Accuracy']
-    simclr_acc = overall_comparison.loc[2, 'Overall Accuracy']
-    
-    autoencoder_improvement = ((autoencoder_acc - baseline_acc) / baseline_acc * 100) if baseline_acc > 0 else 0
-    simclr_improvement = ((simclr_acc - baseline_acc) / baseline_acc * 100) if baseline_acc > 0 else 0
-    
-    f.write(f"2. Autoencoder-SSL Improvement: {autoencoder_improvement:+.1f}% vs Baseline\n")
-    f.write(f"3. SimCLR-SSL Improvement: {simclr_improvement:+.1f}% vs Baseline\n\n")
-    
-    f.write("PER-CLASS PERFORMANCE\n")
-    f.write("-" * 70 + "\n")
-    for cls in CLASS_NAMES:
-        f.write(f"\n{cls} Class:\n")
-        cls_data = class_comparison[class_comparison['Class'] == cls]
-        for _, row in cls_data.iterrows():
-            f.write(f"  {row['Model']:12s}: Recall={row['Recall']:.3f}, Precision={row['Precision']:.3f}, F1={row['F1-Score']:.3f}\n")
-    
-    f.write("\n" + "=" * 70 + "\n")
-    f.write("CONCLUSION\n")
-    f.write("=" * 70 + "\n")
-    if simclr_improvement > 0:
-        f.write("✓ Self-supervised learning (especially SimCLR) provides significant\n")
-        f.write("  improvement over training from scratch.\n")
-    f.write("\n✓ Contrastive learning (SimCLR) outperforms reconstruction-based SSL\n")
-    f.write("  (Autoencoder) for histopathology image classification.\n")
-    f.write("\n✓ Class imbalance remains a challenge across all methods,\n")
-    f.write("  particularly for minority classes (G3, G5).\n")
+    plt.tight_layout()
+    plt.savefig(COMPARISON_PLOT, dpi=150, bbox_inches="tight")
 
-print(f"✓ Saved summary report: {COMPARISON_REPORT}")
 
-# ============================================================================
-# DISPLAY SUMMARY
-# ============================================================================
+def write_report(overall_df, class_df):
+    best_idx = overall_df["Overall Accuracy"].idxmax()
+    best_row = overall_df.loc[best_idx]
 
-print("\n" + "=" * 70)
-print("COMPARISON COMPLETE")
-print("=" * 70)
-print("\nOverall Accuracy:")
-for _, row in overall_comparison.iterrows():
-    print(f"  {row['Model']:25s}: {row['Overall Accuracy']:.3f}")
+    baseline_row = overall_df[overall_df["Model"] == "Baseline (No SSL)"]
+    baseline_acc = baseline_row["Overall Accuracy"].iloc[0] if not baseline_row.empty else np.nan
 
-print("\nSSL Improvement over Baseline:")
-if baseline_acc > 0:
-    print(f"  Autoencoder-SSL: {autoencoder_improvement:+.1f}%")
-    print(f"  SimCLR-SSL:      {simclr_improvement:+.1f}%")
+    with open(COMPARISON_REPORT, "w") as f:
+        f.write("=" * 70 + "\n")
+        f.write("MODEL COMPARISON REPORT\n")
+        f.write("=" * 70 + "\n\n")
+        f.write("OVERALL METRICS COMPARISON\n")
+        f.write("-" * 70 + "\n")
+        f.write(overall_df.drop(columns=["Color"]).to_string(index=False))
+        f.write("\n\n")
 
-print("\nGenerated Files:")
-print(f"  - {COMPARISON_FILE}")
-print(f"  - {COMPARISON_PLOT}")
-print(f"  - {COMPARISON_REPORT}")
-print("=" * 70)
+        f.write("KEY FINDINGS\n")
+        f.write("-" * 70 + "\n")
+        f.write(f"1. Best Performing Model: {best_row['Model']} ({best_row['Overall Accuracy']:.3f} accuracy)\n")
+        if not np.isnan(baseline_acc):
+            for _, row in overall_df.iterrows():
+                if row["Model"] == "Baseline (No SSL)":
+                    continue
+                improvement = ((row["Overall Accuracy"] - baseline_acc) / baseline_acc * 100) if baseline_acc > 0 else np.nan
+                f.write(f"2. {row['Model']} Improvement vs Baseline: {improvement:+.1f}%\n")
+
+        f.write("\nPER-CLASS PERFORMANCE\n")
+        f.write("-" * 70 + "\n")
+        for cls in CLASS_NAMES:
+            f.write(f"\n{cls} Class:\n")
+            cls_data = class_df[class_df["Class"] == cls]
+            for _, row in cls_data.iterrows():
+                f.write(
+                    f"  {row['Model']:18s}: Recall={row['Recall']:.3f}, "
+                    f"Precision={row['Precision']:.3f}, F1={row['F1-Score']:.3f}\n"
+                )
+
+
+def main():
+    print("=" * 70)
+    print("Model Comparison")
+    print("=" * 70)
+
+    loaded_metrics = load_all_metrics()
+    if len(loaded_metrics) < 2:
+        raise RuntimeError("Need at least two evaluation_metrics.txt files to compare models.")
+
+    overall_df, class_df = build_tables(loaded_metrics)
+    overall_df.to_csv(COMPARISON_FILE, index=False)
+    class_df.to_csv(COMPARISON_FILE.replace(".csv", "_per_class.csv"), index=False)
+    plot_comparison(overall_df, class_df)
+    write_report(overall_df, class_df)
+
+    print(f"Saved comparison table: {COMPARISON_FILE}")
+    print(f"Saved comparison plot: {COMPARISON_PLOT}")
+    print(f"Saved comparison report: {COMPARISON_REPORT}")
+
+
+if __name__ == "__main__":
+    main()

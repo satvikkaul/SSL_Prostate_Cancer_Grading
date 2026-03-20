@@ -26,7 +26,7 @@ mdurl==0.1.2
 ml_dtypes==0.5.4
 namex==0.1.0
 networkx==3.6.1
-numpy==2.2.6
+numpy==2.0.2
 opencv-python==4.12.0.88
 openpyxl==3.1.5
 opt_einsum==3.4.0
@@ -34,7 +34,7 @@ optree==0.18.0
 packaging==25.0
 pandas==2.3.3
 pillow==12.0.0
-protobuf==6.33.2
+protobuf==5.29.6
 Pygments==2.19.2
 pyparsing==3.2.5
 python-dateutil==2.9.0.post0
@@ -46,9 +46,9 @@ scikit-learn==1.8.0
 scipy==1.16.3
 setuptools==80.9.0
 six==1.17.0
-tensorboard==2.20.0
+tensorboard==2.18.0
 tensorboard-data-server==0.7.2
-tensorflow==2.20.0
+tensorflow==2.18.1
 termcolor==3.2.0
 threadpoolctl==3.6.0
 tifffile==2025.12.12

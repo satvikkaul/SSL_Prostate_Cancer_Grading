@@ -31,6 +31,7 @@ We implement and compare:
 ## Documentation
 - [Autoencoder architecture (model_cae.md)](docs/model_cae.md)
 - [SimCLR architecture (model_simclr.md)](docs/model_simclr.md)
+- [MoCo v2 architecture (model_moco.md)](docs/model_moco.md)
   
 ## Project Structure
 ```
@@ -78,6 +79,18 @@ Ensure you have Python installed (3.8+ recommended). Then, install the required 
 ```bash
 pip install -r requirements.txt
 ```
+
+**macOS Apple Silicon local workflow**
+
+For local Mac smoke tests and short pilot runs, use:
+
+```bash
+pip install -r requirements-macos.txt
+```
+
+This uses a TensorFlow version that imports cleanly with the Apple Metal plug-in in the project environment. Full training is still better suited to Colab. See [macOS local training notes](docs/macos_local_training.md).
+
+On the current Apple Silicon setup used during project cleanup, TensorFlow detects the Metal device as `GPU:0`, so local pilot runs and short fine-tunes are viable.
 ### 2. Download the Dataset
 
 * Download the SICAPv2 dataset from Mendeley Data.

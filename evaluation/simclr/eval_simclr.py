@@ -21,7 +21,6 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, roc_curve, cohen_kappa_score
 
 from data.generator import DataGenerator, create_tf_dataset
@@ -90,8 +89,13 @@ print(report)
 # Confusion matrix
 cm = confusion_matrix(y_true, y_pred)
 plt.figure(figsize=(10, 8))
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-            xticklabels=CLASS_NAMES, yticklabels=CLASS_NAMES)
+plt.imshow(cm, cmap='Blues')
+for i in range(cm.shape[0]):
+    for j in range(cm.shape[1]):
+        plt.text(j, i, str(cm[i, j]), ha='center', va='center', color='black')
+plt.xticks(range(len(CLASS_NAMES)), CLASS_NAMES)
+plt.yticks(range(len(CLASS_NAMES)), CLASS_NAMES)
+plt.colorbar()
 plt.xlabel('Predicted Label')
 plt.ylabel('True Label')
 plt.title('SimCLR Classifier - Confusion Matrix')

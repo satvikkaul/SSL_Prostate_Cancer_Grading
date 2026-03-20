@@ -50,7 +50,7 @@ LEARNING_RATE = 0.00001
 IMG_DIM = (128, 128, 3)
 
 # Paths
-TRAIN_CSV = "./dataset/Train.csv"
+TRAIN_CSV = "./dataset/TrainSplit.csv"
 VAL_CSV = "./dataset/Val.csv"
 IMG_DIR = "./dataset/images/"
 

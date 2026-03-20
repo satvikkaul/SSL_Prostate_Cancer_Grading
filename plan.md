@@ -6,34 +6,50 @@
 
 ## 0. Protocol & Evaluation Fixes (Priority: Immediate)
 *Rationale*: Current training scripts reuse `Test.csv` for validation/model selection, and MoCo manifest construction includes SICAP test images. This must be corrected before any new metrics are treated as reliable.
-- [ ] **Separate train / validation / test correctly**:
-    - Generate an explicit validation split from `Train.csv`.
-    - Update baseline, CAE, and SimCLR training scripts to use validation data only for checkpointing and tuning.
-    - Reserve `Test.csv` strictly for final evaluation scripts.
-- [ ] **Fix MoCo pretraining protocol**:
-    - Build MoCo pretraining manifest from non-test SICAP data plus PANDA only.
-    - Avoid using SICAP test images during pretraining or representation analysis intended for model selection.
-- [ ] **Regenerate comparisons from clean outputs**:
-    - Remove dependence on hard-coded metrics in comparison scripts.
-    - Compare methods only after retraining/evaluating under the corrected split protocol.
+- [x] **Separate train / validation / test correctly**:
+    - `TrainSplit.csv` and `Val.csv` are now used in the main baseline, CAE, SimCLR, and MoCo training paths.
+    - `Test.csv` is reserved for evaluation scripts.
+- [x] **Fix MoCo pretraining protocol**:
+    - MoCo pretraining manifest is built from non-test SICAP data plus PANDA.
+    - SICAP test images are excluded from the MoCo pretraining manifest.
+- [x] **Regenerate comparison code from clean outputs**:
+    - Shared comparison now reads saved metrics files instead of hard-coded CAE values.
+- [ ] **Re-run the non-MoCo pipelines under the cleaned protocol on final checkpoints**:
+    - Regenerate baseline, CAE, and SimCLR evaluation outputs in the standardized layout before final comparison.
 
 ## 0.5. Complete MoCo Integration (Priority: High)
 *Rationale*: MoCo code exists, but the full downstream experiment is not yet complete.
-- [ ] **Finish MoCo implementation quality**:
-    - Fix encoder training/inference behavior and augmentation fidelity in `models/moco_model.py`.
-    - Make checkpoint resume restore the full MoCo state, not just `encoder_q`.
-- [ ] **Add downstream MoCo pipeline**:
-    - Create MoCo fine-tuning script for Gleason classification.
-    - Create MoCo evaluation script with the same metrics/reporting used for CAE and SimCLR.
-- [ ] **Integrate MoCo into project comparison outputs**:
-    - Add MoCo results to shared comparison tables/plots once trained under the corrected protocol.
+- [x] **Finish MoCo implementation quality**:
+    - MoCo pretraining now runs on the local macOS Metal setup without the earlier graph stall.
+    - Downstream checkpoint selection now exports a single `best_moco_overall.keras` artifact.
+- [x] **Add downstream MoCo pipeline**:
+    - MoCo fine-tuning and evaluation scripts now exist and run end-to-end.
+- [x] **Fix Stage 1 -> Stage 2 handoff in MoCo fine-tuning**:
+    - Stage 2 now reloads the best Stage 1 checkpoint before unfreezing the encoder.
+- [ ] **Run the first full MoCo experiment on Colab/Drive**:
+    - Pretrain longer than the local pilot run, then fine-tune and evaluate from the resulting checkpoint.
+- [ ] **Integrate MoCo into final comparison outputs**:
+    - Add MoCo to the shared comparison once at least one additional model has fresh saved metrics.
 
-## 1. Implement Advanced SSL Methods (Priority: High)
-*Rationale*: SimCLR relies on large batch sizes which can be resource-intensive. MoCo v2 (Momentum Contrast) separates the queue size from batch size, allowing for better contrastive learning on limited hardware.
-- [ ] **Implement MoCo v2**:
-    - Create `models/moco_model.py`: Implement Momentum Encoder and Queue.
-    - Create `training/moco/pretrain_moco.py`: Training loop with momentum update.
-    - Compare performance vs. SimCLR and CAE.
+## 0.75. Checkpoint & Artifact Cleanup (Priority: Medium)
+*Rationale*: The project now follows the corrected train/validation/test protocol and includes a MoCo downstream path, but some legacy CAE/SimCLR scripts still rely on hard-coded checkpoint names or manual artifact assumptions. This should be cleaned up before the final experiment sweep.
+- [ ] **Make checkpoint discovery automatic**:
+    - Remove hard-coded CAE weights paths from fine-tuning scripts.
+    - Add automatic discovery or CLI selection for the latest valid CAE and SimCLR checkpoints.
+- [ ] **Standardize output locations**:
+    - Keep CAE, SimCLR, and MoCo classifier outputs/evaluation artifacts in consistent model-specific folders.
+    - Minimize legacy duplicate save paths once the new layout is validated.
+- [ ] **Fix CAE training protocol drift**:
+    - Restore true Stage 1 head-only freezing behavior in `training/cae/finetune_cae.py`.
+    - Remove duplicated legacy save targets from CAE training/evaluation once the model-specific paths are validated.
+- [ ] **Harden shared comparison execution**:
+    - Make the comparison flow fail more gracefully when fewer than two evaluation outputs are present.
+
+## 1. Advanced SSL Expansion (Priority: High)
+*Rationale*: MoCo v2 is now implemented, but the paper may still benefit from one more SSL comparison if time allows.
+- [x] **Implement MoCo v2**:
+    - `models/moco_model.py`, `training/moco/pretrain_moco.py`, `training/moco/finetune_moco.py`, and `evaluation/moco/eval_moco.py` are now in place.
+    - Remaining work is experiment execution and comparison, not base implementation.
 - [ ] **Explore BYOL (Bootstrap Your Own Latent)** (Secondary):
     - If MoCo v2 performance saturates, explore BYOL which eliminates the need for negative pairs.
 

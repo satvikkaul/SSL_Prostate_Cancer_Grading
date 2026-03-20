@@ -24,10 +24,12 @@ LR_STAGE_2 = 5e-5
 IMG_DIM = (128, 128, 3) # PAPER: Uses 128x128 patches, NOT 512x512!
 
 # Paths
-TRAIN_CSV = "./dataset/Train.csv"
+TRAIN_CSV = "./dataset/TrainSplit.csv"
 VAL_CSV = "./dataset/Val.csv"
 IMG_DIR = "./dataset/images/"
 WEIGHTS_PATH = './output/models/exp_0012/weights/VAE.weights.h5'  # Updated to new trained model 
+OUTPUT_DIR = "./output/cae"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 # --- 1. SETUP DATA GENERATORS ---
@@ -179,7 +181,14 @@ history_stage1 = classifier.fit(
     epochs=EPOCHS_STAGE_1,
     validation_data=val_dataset,
     # No class weights - focal loss handles imbalance internally
-    callbacks=[ModelCheckpoint('./output/best_model_stage1.keras', save_best_only=True, monitor='val_loss')]
+    callbacks=[
+        ModelCheckpoint(
+            os.path.join(OUTPUT_DIR, 'best_cae_classifier.keras'),
+            save_best_only=True,
+            monitor='val_loss'
+        ),
+        ModelCheckpoint('./output/best_model_stage1.keras', save_best_only=True, monitor='val_loss')
+    ]
 )
 
 # --- 6. STAGE 2: FINE-TUNE ENCODER ---
@@ -203,6 +212,7 @@ history_stage2 = classifier.fit(
     validation_data=val_dataset,
     class_weight=class_weights_dict,  # ENABLED: Capped weights (0.5-2.0)
     callbacks=[
+        ModelCheckpoint(os.path.join(OUTPUT_DIR, 'best_cae_fine_tuned.keras'), save_best_only=True, monitor='val_loss'),
         ModelCheckpoint('./output/best_model_fine_tuned.keras', save_best_only=True, monitor='val_loss'),
         ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-6, verbose=1)
     ]
@@ -210,8 +220,9 @@ history_stage2 = classifier.fit(
 
 # --- 7. SAVE & PLOT ---
 
+classifier.save(os.path.join(OUTPUT_DIR, 'cae_classifier_final.keras'))
 classifier.save('./output/final_classifier.keras')
-print("Model saved to ./output/final_classifier.keras")
+print(f"Model saved to {OUTPUT_DIR}/cae_classifier_final.keras")
 
 # Handle plotting when Stage 2 is skipped (EPOCHS_STAGE_2=0)
 if EPOCHS_STAGE_2 > 0:
@@ -246,5 +257,5 @@ if EPOCHS_STAGE_2 > 0:
     plt.axvline(x=len(history_stage1.history['loss']), color='k', linestyle='--', label='Unfreeze Point')
 plt.title('Loss (Stage 1 Only)' if EPOCHS_STAGE_2 == 0 else 'Loss (Combined)')
 plt.legend()
-plt.savefig('./output/classification_results_combined.png')
+plt.savefig(os.path.join(OUTPUT_DIR, 'classification_results.png'))
 print("Results plot saved.")

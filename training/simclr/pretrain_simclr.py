@@ -60,7 +60,7 @@ PROJECTION_DIM = 128    # Embedding dimension
 PROJECTION_HIDDEN = 256 # Hidden layer in projection head
 
 # Data paths
-TRAIN_CSV = "./dataset/Train.csv"
+TRAIN_CSV = "./dataset/TrainSplit.csv"
 VAL_CSV = "./dataset/Val.csv"
 IMG_DIR = "./dataset/images/"
 

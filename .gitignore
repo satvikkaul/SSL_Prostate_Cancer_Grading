@@ -18,3 +18,5 @@ venv/
 .idea/
 .vscode/
 
+context.md
+plan.md
