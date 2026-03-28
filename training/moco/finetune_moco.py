@@ -31,9 +31,9 @@ from models.moco_model import build_encoder
 from training.moco.pretrain_moco import _resolve_resume_path
 
 
-BATCH_SIZE = 8
-EPOCHS_STAGE_1 = 30
-EPOCHS_STAGE_2 = 10
+BATCH_SIZE = 64        # Increased for A100 GPU (was 8)
+EPOCHS_STAGE_1 = 50    # Stage 1: head-only training (was 30)
+EPOCHS_STAGE_2 = 20    # Stage 2: full encoder unfreeze (was 10)
 LR_STAGE_1 = 1e-4
 LR_STAGE_2 = 5e-5
 IMG_DIM = (128, 128, 3)
