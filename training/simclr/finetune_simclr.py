@@ -75,16 +75,23 @@ def resolve_encoder_weights_path(requested_path):
     candidates = []
 
     if requested_path:
-        candidates.append(requested_path)
         if requested_path.endswith('.h5') and not requested_path.endswith('.weights.h5'):
             candidates.append(requested_path[:-3] + '.weights.h5')
+        candidates.append(requested_path)
 
     candidates.extend([
         './output/simclr/encoder_weights.weights.h5',
         './output/simclr/encoder_weights.h5',
     ])
 
+    seen = set()
+    deduped_candidates = []
     for candidate in candidates:
+        if candidate and candidate not in seen:
+            deduped_candidates.append(candidate)
+            seen.add(candidate)
+
+    for candidate in deduped_candidates:
         if candidate and os.path.exists(candidate):
             return candidate
 
