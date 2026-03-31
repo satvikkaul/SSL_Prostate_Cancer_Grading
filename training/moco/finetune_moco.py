@@ -57,6 +57,24 @@ def parse_args():
         default=None,
         help="Path to encoder_q .weights.h5 or full-state MoCo checkpoint",
     )
+    parser.add_argument(
+        "--epochs_stage1",
+        type=int,
+        default=None,
+        help="Epochs for Stage 1 (head-only). Overrides EPOCHS_STAGE_1 constant.",
+    )
+    parser.add_argument(
+        "--epochs_stage2",
+        type=int,
+        default=None,
+        help="Epochs for Stage 2 (partial unfreeze). Overrides EPOCHS_STAGE_2 constant.",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=None,
+        help="Batch size for fine-tuning. Overrides BATCH_SIZE constant.",
+    )
     return parser.parse_args()
 
 
@@ -123,6 +141,11 @@ def main():
     args = parse_args()
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+    # Allow CLI overrides of module-level constants
+    epochs_stage1 = args.epochs_stage1 if args.epochs_stage1 is not None else EPOCHS_STAGE_1
+    epochs_stage2 = args.epochs_stage2 if args.epochs_stage2 is not None else EPOCHS_STAGE_2
+    batch_size = args.batch_size if args.batch_size is not None else BATCH_SIZE
+
     checkpoint_path = args.checkpoint or latest_moco_encoder_weights()
     if not checkpoint_path:
         raise FileNotFoundError(
@@ -133,6 +156,7 @@ def main():
     print("MoCo Fine-Tuning for Gleason Grading")
     print("=" * 70)
     print(f"Checkpoint: {checkpoint_path}")
+    print(f"Stage 1 epochs: {epochs_stage1} | Stage 2 epochs: {epochs_stage2} | Batch size: {batch_size}")
     print_device_configuration()
     print("=" * 70)
 
@@ -149,7 +173,7 @@ def main():
         x=IMG_DIM[1],
         target_channels=IMG_DIM[2],
         y_cols=CLASS_COLUMNS,
-        batch_size=BATCH_SIZE,
+        batch_size=batch_size,
         path_to_img=IMG_DIR,
         shuffle=True,
         data_augmentation=True,
@@ -161,7 +185,7 @@ def main():
         x=IMG_DIM[1],
         target_channels=IMG_DIM[2],
         y_cols=CLASS_COLUMNS,
-        batch_size=BATCH_SIZE,
+        batch_size=batch_size,
         path_to_img=IMG_DIR,
         shuffle=False,
         data_augmentation=False,
@@ -185,7 +209,9 @@ def main():
         y=train_labels,
     )
     class_weights_dict = {i: w for i, w in zip(unique_classes, class_weights_array)}
-    print(f"Class weights (reference only): {class_weights_dict}")
+    # Phase 3: Cap weights at 3.0 to prevent training collapse, combine with focal loss
+    class_weights_dict = {k: min(v, 3.0) for k, v in class_weights_dict.items()}
+    print(f"Class weights (capped at 3.0): {class_weights_dict}")
 
     print("\n--- Stage 1: Train Classification Head ---")
     set_stage1_trainability(classifier)
@@ -198,8 +224,9 @@ def main():
 
     history_stage1 = classifier.fit(
         train_dataset,
-        epochs=EPOCHS_STAGE_1,
+        epochs=epochs_stage1,
         validation_data=val_dataset,
+        class_weight=class_weights_dict,  # Phase 3: combined with focal loss
         callbacks=[
             ModelCheckpoint(
                 BEST_STAGE1_PATH,
@@ -214,7 +241,7 @@ def main():
     history_stage2 = None
     stage1_best_val = min(history_stage1.history["val_loss"])
     stage2_best_val = None
-    if EPOCHS_STAGE_2 > 0:
+    if epochs_stage2 > 0:
         print("\n--- Stage 2: Fine-Tune Encoder ---")
         if not os.path.exists(BEST_STAGE1_PATH):
             raise FileNotFoundError(f"Best Stage 1 checkpoint not found at {BEST_STAGE1_PATH}")
@@ -231,8 +258,9 @@ def main():
 
         history_stage2 = classifier.fit(
             train_dataset,
-            epochs=EPOCHS_STAGE_2,
+            epochs=epochs_stage2,
             validation_data=val_dataset,
+            class_weight=class_weights_dict,  # Phase 3: combined with focal loss
             callbacks=[
                 ModelCheckpoint(
                     BEST_STAGE2_PATH,
@@ -272,8 +300,8 @@ def main():
         "best_overall_export": BEST_OVERALL_PATH,
         "stage1_best_val_loss": float(stage1_best_val),
         "stage2_best_val_loss": float(stage2_best_val) if stage2_best_val is not None else None,
-        "stage1_epochs": EPOCHS_STAGE_1,
-        "stage2_epochs": EPOCHS_STAGE_2,
+        "stage1_epochs": epochs_stage1,
+        "stage2_epochs": epochs_stage2,
     }
     with open(os.path.join(OUTPUT_DIR, "selection_summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
@@ -304,7 +332,7 @@ def main():
     plt.plot(acc, label="Train Acc")
     plt.plot(val_acc, label="Val Acc")
     if history_stage2 is not None:
-        plt.axvline(x=EPOCHS_STAGE_1, color="k", linestyle="--", label="Unfreeze")
+        plt.axvline(x=epochs_stage1, color="k", linestyle="--", label="Unfreeze")
     plt.title("MoCo Classifier Accuracy")
     plt.xlabel("Epoch")
     plt.ylabel("Accuracy")
@@ -315,7 +343,7 @@ def main():
     plt.plot(loss, label="Train Loss")
     plt.plot(val_loss, label="Val Loss")
     if history_stage2 is not None:
-        plt.axvline(x=EPOCHS_STAGE_1, color="k", linestyle="--", label="Unfreeze")
+        plt.axvline(x=epochs_stage1, color="k", linestyle="--", label="Unfreeze")
     plt.title("MoCo Classifier Loss")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")

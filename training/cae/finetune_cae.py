@@ -1,3 +1,5 @@
+import argparse
+import glob
 import pandas as pd
 import numpy as np
 import os
@@ -15,10 +17,22 @@ from sklearn.utils import class_weight
 import matplotlib.pyplot as plt
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau # type: ignore
 
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Fine-tune CAE encoder for classification")
+    parser.add_argument('--epochs_stage1', type=int, default=50, help='Stage 1 epochs (frozen encoder)')
+    parser.add_argument('--epochs_stage2', type=int, default=0, help='Stage 2 epochs (unfrozen encoder)')
+    parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
+    parser.add_argument('--weights', type=str, default='auto', help='Path to CAE weights (auto=latest)')
+    return parser.parse_args()
+
+
+args = parse_args()
+
 # --- CONFIGURATION ---
-BATCH_SIZE = 8
-EPOCHS_STAGE_1 = 50
-EPOCHS_STAGE_2 = 0      # Skip Stage 2 (overfits)
+BATCH_SIZE = args.batch_size
+EPOCHS_STAGE_1 = args.epochs_stage1
+EPOCHS_STAGE_2 = args.epochs_stage2
 LR_STAGE_1 = 0.00001       # Reduced from 0.5 (was causing divergence)
 LR_STAGE_2 = 5e-5
 IMG_DIM = (128, 128, 3) # PAPER: Uses 128x128 patches, NOT 512x512!
@@ -27,9 +41,18 @@ IMG_DIM = (128, 128, 3) # PAPER: Uses 128x128 patches, NOT 512x512!
 TRAIN_CSV = "./dataset/TrainSplit.csv"
 VAL_CSV = "./dataset/Val.csv"
 IMG_DIR = "./dataset/images/"
-WEIGHTS_PATH = './output/models/exp_0012/weights/VAE.weights.h5'  # Updated to new trained model 
 OUTPUT_DIR = "./output/cae"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+if args.weights == 'auto':
+    weight_candidates = sorted(glob.glob('./output/models/exp_*/weights/VAE.weights.h5'))
+    if not weight_candidates:
+        print("ERROR: No CAE weights found. Run train_cae.py first or pass --weights.")
+        exit()
+    WEIGHTS_PATH = weight_candidates[-1]
+    print(f"Auto-detected weights: {WEIGHTS_PATH}")
+else:
+    WEIGHTS_PATH = args.weights
 
 
 # --- 1. SETUP DATA GENERATORS ---
@@ -110,21 +133,21 @@ class_weights_array = class_weight.compute_class_weight(
 )
 
 class_weights_dict = {i: w for i, w in zip(unique_classes, class_weights_array)}
-print(f"Computed Class Weights: {class_weights_dict}")
-
-# FINAL: Don't use class weights - focal loss handles class imbalance better
-# Extreme weights caused training collapse (accuracy → 15%)
-# Using focal loss parameters that previously achieved 1 G5 prediction
-print(f"Computed Class Weights (NOT USED): {class_weights_dict}")
-print("Using Focal Loss instead of class weights for better stability")
+# Phase 3: Cap weights at 3.0 to prevent training collapse
+# (uncapped weights caused accuracy → 15% previously)
+# Focal loss + capped class weights are complementary:
+#   - Focal loss: downweights easy examples via (1-p)^gamma
+#   - Class weights: upweights gradient from minority classes (G5, G3)
+class_weights_dict = {k: min(v, 3.0) for k, v in class_weights_dict.items()}
+print(f"Class weights (capped at 3.0): {class_weights_dict}")
 
 # --- 4. CREATE CLASSIFIER ---
 from tensorflow.keras.layers import GlobalMaxPooling2D
 
 encoder = my_VAE.encoder
 # Initial State: Freeze Encoder
-# for layer in encoder.layers:
-#     layer.trainable = False
+for layer in encoder.layers:
+    layer.trainable = False
 
 # PAPER APPROACH: Use bottleneck output → GMP → Dense[200, 4]
 # Get bottleneck output (last drop out layer before flatten)
@@ -180,7 +203,7 @@ history_stage1 = classifier.fit(
     train_dataset,
     epochs=EPOCHS_STAGE_1,
     validation_data=val_dataset,
-    # No class weights - focal loss handles imbalance internally
+    class_weight=class_weights_dict,  # Phase 3: combined with focal loss
     callbacks=[
         ModelCheckpoint(
             os.path.join(OUTPUT_DIR, 'best_cae_classifier.keras'),
@@ -210,7 +233,7 @@ history_stage2 = classifier.fit(
     train_dataset,
     epochs=EPOCHS_STAGE_2,
     validation_data=val_dataset,
-    class_weight=class_weights_dict,  # ENABLED: Capped weights (0.5-2.0)
+    class_weight=class_weights_dict,  # Phase 3: capped at 3.0, combined with focal loss
     callbacks=[
         ModelCheckpoint(os.path.join(OUTPUT_DIR, 'best_cae_fine_tuned.keras'), save_best_only=True, monitor='val_loss'),
         ModelCheckpoint('./output/best_model_fine_tuned.keras', save_best_only=True, monitor='val_loss'),

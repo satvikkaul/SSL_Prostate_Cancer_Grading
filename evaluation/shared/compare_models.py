@@ -1,13 +1,16 @@
 """
 Compare all available model evaluation outputs.
 
-Reads metrics from:
-  - ./output/baseline/evaluation_metrics.txt
-  - ./output/cae/evaluation_metrics.txt
-  - ./output/simclr/evaluation_metrics.txt
-  - ./output/moco/evaluation_metrics.txt
+By default, reads metrics from:
+    - ./output/baseline/evaluation_metrics.txt
+    - ./output/cae/evaluation_metrics.txt
+    - ./output/simclr/evaluation_metrics.txt
+    - ./output/moco/evaluation_metrics.txt
+
+Use --base-dir and --output-dir to compare archived outputs stored elsewhere.
 """
 
+import argparse
 import os
 import re
 
@@ -19,17 +22,47 @@ import pandas as pd
 
 
 CLASS_NAMES = ["NC", "G3", "G5", "G4"]
-OUTPUT_DIR = "./output"
-COMPARISON_FILE = os.path.join(OUTPUT_DIR, "model_comparison.csv")
-COMPARISON_PLOT = os.path.join(OUTPUT_DIR, "model_comparison_plots.png")
-COMPARISON_REPORT = os.path.join(OUTPUT_DIR, "comparison_report.txt")
+MODEL_COLORS = {
+    "Baseline (No SSL)": "#ff9999",
+    "CAE-SSL": "#66b3ff",
+    "SimCLR-SSL": "#99ff99",
+    "MoCo-SSL": "#ffcc80",
+}
 
-MODEL_SPECS = [
-    ("Baseline (No SSL)", "./output/baseline/evaluation_metrics.txt", "#ff9999"),
-    ("CAE-SSL", "./output/cae/evaluation_metrics.txt", "#66b3ff"),
-    ("SimCLR-SSL", "./output/simclr/evaluation_metrics.txt", "#99ff99"),
-    ("MoCo-SSL", "./output/moco/evaluation_metrics.txt", "#ffcc80"),
-]
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Compare model evaluation outputs.")
+    parser.add_argument(
+        "--base-dir",
+        default="./output",
+        help="Directory containing baseline/cae/simclr/moco evaluation subfolders.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Directory where comparison CSV/report/plot files will be written. Defaults to --base-dir.",
+    )
+    return parser.parse_args()
+
+
+def build_model_specs(base_dir):
+    return [
+        ("Baseline (No SSL)", os.path.join(base_dir, "baseline", "evaluation_metrics.txt"), MODEL_COLORS["Baseline (No SSL)"]),
+        ("CAE-SSL", os.path.join(base_dir, "cae", "evaluation_metrics.txt"), MODEL_COLORS["CAE-SSL"]),
+        ("SimCLR-SSL", os.path.join(base_dir, "simclr", "evaluation_metrics.txt"), MODEL_COLORS["SimCLR-SSL"]),
+        ("MoCo-SSL", os.path.join(base_dir, "moco", "evaluation_metrics.txt"), MODEL_COLORS["MoCo-SSL"]),
+    ]
+
+
+def build_output_paths(output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    comparison_file = os.path.join(output_dir, "model_comparison.csv")
+    return {
+        "comparison_file": comparison_file,
+        "comparison_per_class_file": comparison_file.replace(".csv", "_per_class.csv"),
+        "comparison_plot": os.path.join(output_dir, "model_comparison_plots.png"),
+        "comparison_report": os.path.join(output_dir, "comparison_report.txt"),
+    }
 
 
 def empty_metrics():
@@ -70,7 +103,7 @@ def parse_metrics_file(filepath):
         metrics["cohens_kappa"] = float(kappa_match.group(1))
 
     for cls in CLASS_NAMES:
-        cls_match = re.search(rf"^{cls}\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)", content, re.MULTILINE)
+        cls_match = re.search(rf"^\s*{cls}\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)", content, re.MULTILINE)
         if cls_match:
             metrics["class_metrics"][cls] = {
                 "precision": float(cls_match.group(1)),
@@ -81,9 +114,9 @@ def parse_metrics_file(filepath):
     return metrics
 
 
-def load_all_metrics():
+def load_all_metrics(model_specs):
     loaded = []
-    for model_name, metrics_path, color in MODEL_SPECS:
+    for model_name, metrics_path, color in model_specs:
         metrics = parse_metrics_file(metrics_path)
         if metrics is None:
             print(f"Skipping {model_name}: missing {metrics_path}")
@@ -124,7 +157,7 @@ def build_tables(loaded_metrics):
     return pd.DataFrame(overall_rows), pd.DataFrame(class_rows)
 
 
-def plot_comparison(overall_df, class_df):
+def plot_comparison(overall_df, class_df, comparison_plot):
     fig = plt.figure(figsize=(16, 12))
     colors = overall_df["Color"].tolist()
     labels = overall_df["Model"].tolist()
@@ -177,17 +210,18 @@ def plot_comparison(overall_df, class_df):
             ax.text(bar.get_x() + bar.get_width() / 2.0, height, f"{height:.2f}", ha="center", va="bottom")
 
     plt.tight_layout()
-    plt.savefig(COMPARISON_PLOT, dpi=150, bbox_inches="tight")
+    plt.savefig(comparison_plot, dpi=150, bbox_inches="tight")
+    plt.close(fig)
 
 
-def write_report(overall_df, class_df):
+def write_report(overall_df, class_df, comparison_report):
     best_idx = overall_df["Overall Accuracy"].idxmax()
     best_row = overall_df.loc[best_idx]
 
     baseline_row = overall_df[overall_df["Model"] == "Baseline (No SSL)"]
     baseline_acc = baseline_row["Overall Accuracy"].iloc[0] if not baseline_row.empty else np.nan
 
-    with open(COMPARISON_REPORT, "w") as f:
+    with open(comparison_report, "w") as f:
         f.write("=" * 70 + "\n")
         f.write("MODEL COMPARISON REPORT\n")
         f.write("=" * 70 + "\n\n")
@@ -219,23 +253,32 @@ def write_report(overall_df, class_df):
 
 
 def main():
+    args = parse_args()
+    base_dir = os.path.abspath(args.base_dir)
+    output_dir = os.path.abspath(args.output_dir or args.base_dir)
+    model_specs = build_model_specs(base_dir)
+    output_paths = build_output_paths(output_dir)
+
     print("=" * 70)
     print("Model Comparison")
     print("=" * 70)
+    print(f"Base directory: {base_dir}")
+    print(f"Output directory: {output_dir}")
 
-    loaded_metrics = load_all_metrics()
+    loaded_metrics = load_all_metrics(model_specs)
     if len(loaded_metrics) < 2:
         raise RuntimeError("Need at least two evaluation_metrics.txt files to compare models.")
 
     overall_df, class_df = build_tables(loaded_metrics)
-    overall_df.to_csv(COMPARISON_FILE, index=False)
-    class_df.to_csv(COMPARISON_FILE.replace(".csv", "_per_class.csv"), index=False)
-    plot_comparison(overall_df, class_df)
-    write_report(overall_df, class_df)
+    overall_df.to_csv(output_paths["comparison_file"], index=False)
+    class_df.to_csv(output_paths["comparison_per_class_file"], index=False)
+    plot_comparison(overall_df, class_df, output_paths["comparison_plot"])
+    write_report(overall_df, class_df, output_paths["comparison_report"])
 
-    print(f"Saved comparison table: {COMPARISON_FILE}")
-    print(f"Saved comparison plot: {COMPARISON_PLOT}")
-    print(f"Saved comparison report: {COMPARISON_REPORT}")
+    print(f"Saved comparison table: {output_paths['comparison_file']}")
+    print(f"Saved comparison per-class table: {output_paths['comparison_per_class_file']}")
+    print(f"Saved comparison plot: {output_paths['comparison_plot']}")
+    print(f"Saved comparison report: {output_paths['comparison_report']}")
 
 
 if __name__ == "__main__":

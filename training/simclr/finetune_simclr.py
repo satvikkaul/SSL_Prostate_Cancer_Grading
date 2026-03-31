@@ -12,6 +12,7 @@ Output:
     - Results plot: ./output/simclr/classification_results.png
 """
 
+import argparse
 import os
 import sys
 # Add project root to path
@@ -31,6 +32,44 @@ from tensorflow.keras.optimizers import SGD, Adam
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Fine-tune SimCLR encoder for classification")
+    parser.add_argument(
+        '--epochs_stage1',
+        type=int,
+        default=50,
+        help='Stage 1 epochs (frozen encoder)',
+    )
+    parser.add_argument(
+        '--epochs_stage2',
+        type=int,
+        default=0,
+        help='Stage 2 epochs (unfrozen encoder)',
+    )
+    parser.add_argument(
+        '--batch_size',
+        type=int,
+        default=8,
+        help='Batch size',
+    )
+    parser.add_argument(
+        '--encoder_weights',
+        type=str,
+        default='./output/simclr/encoder_weights.h5',
+        help='Path to SimCLR encoder weights',
+    )
+    parser.add_argument(
+        '--weights',
+        dest='encoder_weights',
+        type=str,
+        help='Alias for --encoder_weights',
+    )
+    return parser.parse_args()
+
+
+args = parse_args()
+
+
 def print_device_configuration():
     visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
     gpus = tf.config.list_physical_devices('GPU')
@@ -44,9 +83,9 @@ def print_device_configuration():
 # CONFIGURATION
 # ============================================================================
 
-BATCH_SIZE = 8
-EPOCHS_STAGE_1 = 50      # Train head only
-EPOCHS_STAGE_2 = 0       # Fine-tune encoder (set to 0 to skip)
+BATCH_SIZE = args.batch_size
+EPOCHS_STAGE_1 = args.epochs_stage1      # Train head only
+EPOCHS_STAGE_2 = args.epochs_stage2       # Fine-tune encoder (set to 0 to skip)
 LR_STAGE_1 = 0.00001
 LR_STAGE_2 = 5e-5
 IMG_DIM = (128, 128, 3)
@@ -55,7 +94,7 @@ IMG_DIM = (128, 128, 3)
 TRAIN_CSV = "./dataset/TrainSplit.csv"
 VAL_CSV = "./dataset/Val.csv"
 IMG_DIR = "./dataset/images/"
-ENCODER_WEIGHTS = './output/simclr/encoder_weights.h5'  # SimCLR pretrained weights
+ENCODER_WEIGHTS = args.encoder_weights  # SimCLR pretrained weights
 
 # Output
 OUTPUT_DIR = "./output/simclr"
@@ -174,8 +213,9 @@ class_weights_array = class_weight.compute_class_weight(
     y=train_labels
 )
 class_weights_dict = {i: w for i, w in zip(unique_classes, class_weights_array)}
-print(f"Class Weights: {class_weights_dict}")
-print("Note: Using focal loss instead for better stability")
+# Phase 3: Cap weights at 3.0 to prevent training collapse, combine with focal loss
+class_weights_dict = {k: min(v, 3.0) for k, v in class_weights_dict.items()}
+print(f"Class weights (capped at 3.0): {class_weights_dict}")
 
 # Focal loss
 def focal_loss(alpha=0.5, gamma=2.0):
@@ -212,6 +252,7 @@ history_stage1 = classifier.fit(
     train_dataset,
     epochs=EPOCHS_STAGE_1,
     validation_data=val_dataset,
+    class_weight=class_weights_dict,  # Phase 3: combined with focal loss
     callbacks=[
         ModelCheckpoint(
             os.path.join(OUTPUT_DIR, 'best_simclr_classifier.keras'),
@@ -243,6 +284,7 @@ if EPOCHS_STAGE_2 > 0:
         train_dataset,
         epochs=EPOCHS_STAGE_2,
         validation_data=val_dataset,
+        class_weight=class_weights_dict,  # Phase 3: combined with focal loss
         callbacks=[
             ModelCheckpoint(
                 os.path.join(OUTPUT_DIR, 'best_simclr_fine_tuned.keras'),
