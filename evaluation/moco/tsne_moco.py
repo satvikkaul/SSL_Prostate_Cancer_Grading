@@ -90,7 +90,7 @@ def extract_features(encoder, image_paths, batch_size=32):
 
 
 def build_grade_map():
-    grade_cols = ["NC", "G3", "G4", "G5"]
+    grade_cols = ["NC", "G3", "G5", "G4"]
     grade_map = {}
 
     for csv_path in SICAP_LABEL_CSVS:
