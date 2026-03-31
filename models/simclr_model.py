@@ -217,8 +217,8 @@ class SimCLRTrainer:
     
     def reset_metrics(self):
         """Reset metrics at the start of each epoch"""
-        self.train_loss_metric.reset_states()
-        self.val_loss_metric.reset_states()
+        self.train_loss_metric.reset_state()
+        self.val_loss_metric.reset_state()
 
 
 if __name__ == "__main__":

@@ -128,7 +128,7 @@ class ConvVarAutoencoder:
         # 
         decoder_input = Input(shape=(self.z_dim,), name='decoder_input')
 
-        x1 = Dense(np.prod(shape_before_flattening))(encoder_output)
+        x1 = Dense(int(np.prod(shape_before_flattening)))(encoder_output)
         x1 = Reshape(shape_before_flattening)(x1)
         # import pdb; pdb.set_trace()
         for i in range(len(self.decoder_conv_t_filters)):
