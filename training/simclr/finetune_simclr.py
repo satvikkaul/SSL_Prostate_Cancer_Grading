@@ -13,6 +13,7 @@ Output:
 """
 
 import argparse
+import glob
 import os
 import sys
 # Add project root to path
@@ -70,6 +71,31 @@ def parse_args():
 args = parse_args()
 
 
+def resolve_encoder_weights_path(requested_path):
+    candidates = []
+
+    if requested_path:
+        candidates.append(requested_path)
+        if requested_path.endswith('.h5') and not requested_path.endswith('.weights.h5'):
+            candidates.append(requested_path[:-3] + '.weights.h5')
+
+    candidates.extend([
+        './output/simclr/encoder_weights.weights.h5',
+        './output/simclr/encoder_weights.h5',
+    ])
+
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+
+    wildcard_candidates = sorted(glob.glob('./output/simclr/encoder_weights*.h5'))
+    if wildcard_candidates:
+        weights_suffix = [p for p in wildcard_candidates if p.endswith('.weights.h5')]
+        return weights_suffix[0] if weights_suffix else wildcard_candidates[0]
+
+    return requested_path
+
+
 def print_device_configuration():
     visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
     gpus = tf.config.list_physical_devices('GPU')
@@ -94,7 +120,7 @@ IMG_DIM = (128, 128, 3)
 TRAIN_CSV = "./dataset/TrainSplit.csv"
 VAL_CSV = "./dataset/Val.csv"
 IMG_DIR = "./dataset/images/"
-ENCODER_WEIGHTS = args.encoder_weights  # SimCLR pretrained weights
+ENCODER_WEIGHTS = resolve_encoder_weights_path(args.encoder_weights)  # SimCLR pretrained weights
 
 # Output
 OUTPUT_DIR = "./output/simclr"
